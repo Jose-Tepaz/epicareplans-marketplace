@@ -1,0 +1,195 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #1f2937;
+  --card: #ffffff;
+  --card-foreground: #1f2937;
+  --popover: #ffffff;
+  --popover-foreground: #1f2937;
+  --primary: #F26023;
+  --primary-foreground: #ffffff;
+  --secondary: #b8e5f5;
+  --secondary-foreground: #1f2937;
+  --muted: #fee2e2;
+  --muted-foreground: #6b7280;
+  --accent: #ffab66;
+  --accent-foreground: #1f2937;
+  /* Added cyan color token for the blue accent color used throughout the site */
+  --cyan: #35BBFD;
+  --cyan-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e5e7eb;
+  --input: #f3f4f6;
+  --ring: rgba(255, 122, 69, 0.5);
+  --chart-1: #ff7a45;
+  --chart-2: #ffab66;
+  --chart-3: #b8e5f5;
+  --chart-4: #fee2e2;
+  --chart-5: #1f2937;
+  --radius: 0.5rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1f2937;
+  --sidebar-primary: #ff7a45;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ffab66;
+  --sidebar-accent-foreground: #1f2937;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: rgba(255, 122, 69, 0.5);
+}
+
+.dark {
+  --background: #1f2937;
+  --foreground: #f9fafb;
+  --card: #1f2937;
+  --card-foreground: #f9fafb;
+  --popover: #1f2937;
+  --popover-foreground: #f9fafb;
+  --primary: #ff7a45;
+  --primary-foreground: #ffffff;
+  --secondary: #374151;
+  --secondary-foreground: #f9fafb;
+  --muted: #374151;
+  --muted-foreground: #9ca3af;
+  --accent: #ffab66;
+  --accent-foreground: #f9fafb;
+  /* Added cyan color for dark mode */
+  --cyan: #4abadb;
+  --cyan-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #374151;
+  --input: #374151;
+  --ring: rgba(255, 122, 69, 0.5);
+  --chart-1: #ff7a45;
+  --chart-2: #ffab66;
+  --chart-3: #b8e5f5;
+  --chart-4: #fee2e2;
+  --chart-5: #f9fafb;
+  --sidebar: #1f2937;
+  --sidebar-foreground: #f9fafb;
+  --sidebar-primary: #ff7a45;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ffab66;
+  --sidebar-accent-foreground: #f9fafb;
+  --sidebar-border: #374151;
+  --sidebar-ring: rgba(255, 122, 69, 0.5);
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  /* Added cyan color to theme inline for Tailwind usage */
+  --color-cyan: var(--cyan);
+  --color-cyan-foreground: var(--cyan-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+
+.input-epicare{
+  @apply bg-white text-foreground border-0 rounded-full px-6 py-6 text-lg mb-8 placeholder:text-gray-400;
+ }
+
+ .btn-cyan {
+  @apply cursor-pointer rounded-full bg-cyan text-white border-2 border-cyan hover:bg-[transparent] hover:text-cyan text-lg px-8 py-6  font-semibold disabled:opacity-50 disabled:cursor-not-allowed;
+ }
+
+ .btn-orange {
+  @apply cursor-pointer rounded-full bg-primary text-white border-2 border-primary hover:bg-[transparent] hover:text-primary text-lg px-8 py-6  font-semibold disabled:opacity-50 disabled:cursor-not-allowed;
+ }
+
+ .btn-outline-cyan {
+  @apply cursor-pointer rounded-full bg-transparent border-2 border-cyan text-cyan hover:bg-cyan hover:text-white text-lg px-8 py-6  font-semibold disabled:opacity-50 disabled:cursor-not-allowed;
+ }
+
+ .btn-outline-orange {
+  @apply cursor-pointer rounded-full bg-transparent border-2 border-primary text-primary hover:bg-primary hover:text-white text-lg px-8 py-6  font-semibold disabled:opacity-50 disabled:cursor-not-allowed;
+ }
+
+
+ .btn-white {
+  @apply cursor-pointer rounded-full bg-white text-primary border-2 border-white transition-all duration-300 hover:bg-[transparent] hover:text-white text-lg px-8 py-6  font-semibold disabled:opacity-50 disabled:cursor-not-allowed;
+ }
+
+.btn-white-outline {
+ @apply cursor-pointer rounded-full bg-transparent text-white border-2 border-white transition-all duration-300 hover:bg-white hover:text-primary text-lg px-8 py-6  font-semibold disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.input-epicare {
+  background: transparent;
+  color: var(--color-primary-foreground) !important;
+  border: 1px solid white !important;
+  border-radius: 10px !important;
+  padding: 10px 20px !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  transition: all 0.3s ease !important;
+  height: 50px !important;
+}
+
+.input-epicare::placeholder {
+  color: white !important;
+}
+
+.input-epicare:focus {
+  background: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.input-epicare:hover {
+  background: transparent !important;
+}
+ 
+ 
+ 
