@@ -68,21 +68,54 @@ export class AllStateAPI {
       return [];
     }
 
-    return response.availablePlans.map(plan => ({
-      id: plan.id || 'unknown',
-      name: plan.planName || 'Unknown Plan',
-      price: plan.insuranceRate || 0,
-      coverage: plan.benefitDescription || 'No coverage description',
-      productType: plan.productType || 'Unknown',
-      benefits: plan.benefits && Array.isArray(plan.benefits) 
-        ? plan.benefits.map(benefit => benefit.name || 'Unknown benefit')
-        : [],
-      allState: true,
-      planType: plan.planType || 'Unknown',
-      benefitDescription: plan.benefitDescription || 'No description',
-      brochureUrl: plan.pathToBrochure, 
-      carrierName: plan.carrierName
-    }));
+    return response.availablePlans.map(plan => {
+      const mappedPlan = {
+        id: plan.id || 'unknown',
+        name: plan.planName || 'Unknown Plan',
+        price: plan.insuranceRate || 0,
+        coverage: plan.benefitDescription || 'No coverage description',
+        productType: plan.productType || 'Unknown',
+        benefits: plan.benefits && Array.isArray(plan.benefits) 
+          ? plan.benefits.map(benefit => benefit.name || 'Unknown benefit')
+          : [],
+        allState: true,
+        planType: plan.planType || 'Unknown',
+        benefitDescription: plan.benefitDescription || 'No description',
+        brochureUrl: plan.pathToBrochure, 
+        carrierName: plan.carrierName,
+        // Preservar campos necesarios para ApplicationBundle API
+        productCode: plan.productCode,
+        planKey: plan.planKey
+      };
+
+      console.log('Mapeando plan del Quoting API:', {
+        originalPlan: {
+          id: plan.id,
+          productCode: plan.productCode,
+          planKey: plan.planKey,
+          planName: plan.planName
+        },
+        mappedPlan: {
+          id: mappedPlan.id,
+          productCode: mappedPlan.productCode,
+          planKey: mappedPlan.planKey,
+          name: mappedPlan.name
+        }
+      });
+
+      // Log adicional para debugging
+      if (!plan.productCode || !plan.planKey) {
+        console.warn('Plan del Quoting API sin campos requeridos:', {
+          id: plan.id,
+          productCode: plan.productCode,
+          planKey: plan.planKey,
+          planName: plan.planName,
+          allFields: Object.keys(plan)
+        });
+      }
+
+      return mappedPlan;
+    });
   }
 
   // Get insurance quotes from All State API

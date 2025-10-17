@@ -75,9 +75,14 @@ export default function ExplorePage() {
       const response = await fetch(`/api/address/validate-zip/${zip}`)
       const data = await response.json()
       
-      if (data.valid) {
+      if (data.success) {
         setZipCodeError("")
         setZipCodeValid(true)
+        
+        // Guardar ZIP code en localStorage para el enrollment
+        localStorage.setItem('userZipCode', zip)
+        console.log('ZIP code guardado en localStorage:', zip)
+        
         return true
       } else {
         setZipCodeError("ZIP code not found. Please enter a valid ZIP code.")

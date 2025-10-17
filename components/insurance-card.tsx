@@ -9,10 +9,13 @@
  * @version 1.0.0
  */
 
-import { Shield } from "lucide-react"
+"use client"
+
+import { Shield, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { InsurancePlanModal } from "@/components/insurance-plan-modal"
+import { useCart } from "@/contexts/cart-context"
 import { useState } from "react"
 
 /**
@@ -97,6 +100,17 @@ interface InsuranceCardProps {
 export function InsuranceCard({ plan }: InsuranceCardProps) {
   // Estado para controlar la apertura/cierre del modal de detalles
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  
+  // Hook del carrito
+  const { addItem, isInCart } = useCart()
+  
+  // Verificar si el plan ya está en el carrito
+  const inCart = isInCart(plan.id)
+
+  // Manejar la selección del plan
+  const handleSelectPlan = () => {
+    addItem(plan)
+  }
 
   return (
     <>
@@ -165,7 +179,7 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
 
       {/* ===== BOTONES DE ACCIÓN ===== */}
       {/* Botón "See more": Abre el modal con información detallada del plan */}
-      {/* Botón "Select this plan": Permite al usuario seleccionar este plan (funcionalidad pendiente) */}
+      {/* Botón "Select this plan": Agrega el plan al carrito */}
       <div className="flex gap-3">
         <Button
           variant="outline"
@@ -174,8 +188,23 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
         >
           See more
         </Button>
-        <Button className="flex-1 rounded-full bg-primary hover:bg-primary/90 text-white h-12 font-semibold">
-          Select this plan
+        <Button 
+          onClick={handleSelectPlan}
+          disabled={inCart}
+          className={`flex-1 rounded-full h-12 font-semibold transition-all ${
+            inCart 
+              ? 'bg-green-600 hover:bg-green-600 text-white cursor-default' 
+              : 'bg-primary hover:bg-primary/90 text-white'
+          }`}
+        >
+          {inCart ? (
+            <>
+              <Check className="w-4 h-4 mr-2" />
+              Added to Cart
+            </>
+          ) : (
+            'Select this plan'
+          )}
         </Button>
       </div>
 

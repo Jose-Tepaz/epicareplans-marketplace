@@ -9,10 +9,13 @@
  * @version 1.0.0
  */
 
-import { Shield, CheckCircle2 } from "lucide-react"
+"use client"
+
+import { Shield, CheckCircle2, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { useCart } from "@/contexts/cart-context"
 
 /**
  * Interface que define la estructura de un plan de seguro
@@ -69,6 +72,14 @@ interface InsurancePlanModalProps {
  * ```
  */
 export function InsurancePlanModal({ plan, isOpen, onOpenChange }: InsurancePlanModalProps) {
+  const { addItem, isInCart } = useCart()
+  const inCart = isInCart(plan.id)
+
+  const handleSelectPlan = () => {
+    addItem(plan)
+    onOpenChange(false)
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -203,14 +214,25 @@ export function InsurancePlanModal({ plan, isOpen, onOpenChange }: InsurancePlan
           {/* 
             Botón principal para seleccionar el plan
             - Ancho completo (w-full)
-            - Al hacer clic cierra el modal (funcionalidad de selección pendiente)
-            - TODO: Implementar lógica de selección de plan
+            - Agrega el plan al carrito y cierra el modal
           */}
           <Button 
-            className="w-full rounded-full bg-primary hover:bg-primary/90 text-white h-12 font-semibold text-lg"
-            onClick={() => onOpenChange(false)}
+            onClick={handleSelectPlan}
+            disabled={inCart}
+            className={`w-full rounded-full h-12 font-semibold text-lg transition-all ${
+              inCart 
+                ? 'bg-green-600 hover:bg-green-600 text-white cursor-default' 
+                : 'bg-primary hover:bg-primary/90 text-white'
+            }`}
           >
-            Select this plan
+            {inCart ? (
+              <>
+                <Check className="w-5 h-5 mr-2" />
+                Added to Cart
+              </>
+            ) : (
+              'Select this plan'
+            )}
           </Button>
         </div>
       </DialogContent>

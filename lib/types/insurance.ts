@@ -138,4 +138,7 @@ export interface InsurancePlan {
   benefitDescription: string;
   brochureUrl?: string;
   carrierName?: string;
+  // Campos necesarios para ApplicationBundle API
+  productCode?: string;
+  planKey?: string;
 }
