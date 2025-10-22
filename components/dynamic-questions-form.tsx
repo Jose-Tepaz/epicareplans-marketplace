@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 // Removidos RadioGroup y Checkbox de Radix UI para evitar bucles infinitos
 import { Input } from "@/components/ui/input"
@@ -48,65 +48,67 @@ export function DynamicQuestionsForm({
     timestamp: number
   } | null>(null)
 
-  // Función para determinar si una pregunta debe ser visible
-  const isQuestionVisible = (question: EligibilityQuestion): boolean => {
+  // Función para determinar si una pregunta debe ser visible - MEMOIZADA
+  const isQuestionVisible = useCallback((question: EligibilityQuestion): boolean => {
     // Si no tiene condición, siempre es visible
     if (!question.condition) return true
     
     // Buscar la respuesta de la pregunta condicional
     const conditionResponse = responses.find(r => 
-      r.questionId === question.condition.questionId
+      r.questionId === question.condition?.questionId
     )
     
     // Si no hay respuesta para la pregunta condicional, no mostrar
     if (!conditionResponse) return false
     
     // Verificar si la respuesta coincide con la condición
-    const shouldShow = conditionResponse.response === question.condition.answerId.toString()
-    
-    console.log(`Question ${question.questionId} visibility check:`, {
-      conditionQuestionId: question.condition.questionId,
-      conditionAnswerId: question.condition.answerId,
-      actualResponse: conditionResponse.response,
-      shouldShow
-    })
+    const shouldShow = conditionResponse.response === question.condition?.answerId.toString()
     
     return shouldShow
-  }
+  }, [responses])
 
-  // Filtrar preguntas visibles
-  const visibleQuestions = questions.filter(isQuestionVisible)
+  // Filtrar preguntas visibles - MEMOIZADO para evitar recalcular en cada render
+  const visibleQuestions = useMemo(() => {
+    return questions.filter(isQuestionVisible)
+  }, [questions, isQuestionVisible])
 
-  // Función para validar todas las preguntas visibles
-  const validateAllVisibleQuestions = useCallback(() => {
-    const errors: string[] = []
+  // Ref para evitar notificaciones repetidas de validación
+  const lastValidationRef = useRef<{ isValid: boolean; errors: string[] } | null>(null)
+
+  // Exponer función de validación al componente padre
+  useEffect(() => {
+    if (!onValidateForNext) return
     
+    // Calcular validación inline para evitar dependencias circulares
+    const errors: string[] = []
     visibleQuestions.forEach(question => {
       const response = responses.find(r => r.questionId === question.questionId)
-      
       if (!response || !response.response.trim()) {
         errors.push(`Question ${question.questionId} is required`)
       }
     })
-    
     const isValid = errors.length === 0
+    const next = { isValid, errors }
     
-    console.log('Validación completa:', {
-      totalVisibleQuestions: visibleQuestions.length,
-      answeredQuestions: responses.length,
-      errors: errors.length,
-      isValid
-    })
-    
-    return { isValid, errors }
-  }, [visibleQuestions, responses])
+    // Solo notificar si cambió
+    const prev = lastValidationRef.current
+    const changed =
+      !prev ||
+      prev.isValid !== next.isValid ||
+      prev.errors.length !== next.errors.length ||
+      !prev.errors.every((e, i) => e === next.errors[i])
 
-  // Exponer función de validación al componente padre
-  useEffect(() => {
-    if (onValidateForNext) {
-      onValidateForNext(validateAllVisibleQuestions().isValid, validateAllVisibleQuestions().errors)
+    if (changed) {
+      console.log('Validación completa:', {
+        totalVisibleQuestions: visibleQuestions.length,
+        answeredQuestions: responses.length,
+        errors: errors.length,
+        isValid
+      })
+      lastValidationRef.current = next
+      onValidateForNext(next.isValid, next.errors)
     }
-  }, [validateAllVisibleQuestions, onValidateForNext])
+  }, [visibleQuestions, responses, onValidateForNext])
 
   // Validar respuestas cuando cambien
   useEffect(() => {
@@ -183,8 +185,17 @@ export function DynamicQuestionsForm({
     })
   }
   
+  // Ref para evitar ejecutar limpieza en el primer render
+  const cleanupBootstrapRef = useRef(false)
+
   // Limpiar respuestas de preguntas que ya no son visibles
   useEffect(() => {
+    // Skip en el primer render
+    if (!cleanupBootstrapRef.current) {
+      cleanupBootstrapRef.current = true
+      return
+    }
+
     const visibleQuestionIds = visibleQuestions.map(q => q.questionId)
     const responsesToKeep = responses.filter(r => visibleQuestionIds.includes(r.questionId))
     
@@ -346,7 +357,16 @@ export function DynamicQuestionsForm({
 
   // Función para validar manualmente (para testing)
   const handleManualValidation = () => {
-    const result = validateAllVisibleQuestions()
+    const errors: string[] = []
+    visibleQuestions.forEach(question => {
+      const response = responses.find(r => r.questionId === question.questionId)
+      if (!response || !response.response.trim()) {
+        errors.push(`Question ${question.questionId} is required`)
+      }
+    })
+    const isValid = errors.length === 0
+    const result = { isValid, errors }
+    
     console.log('Validación manual:', result)
     
     if (!result.isValid) {
@@ -405,7 +425,7 @@ export function DynamicQuestionsForm({
         {visibleQuestions.map(renderQuestion)}
       </div>
       
-      {/* Debug info para preguntas condicionales */}
+      {/* Debug info para preguntas condicionales 
       {process.env.NODE_ENV === 'development' && (
         <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
           <h4 className="text-sm font-semibold text-blue-800 mb-2">Debug: Preguntas Condicionales</h4>
@@ -424,8 +444,10 @@ export function DynamicQuestionsForm({
           </div>
         </div>
       )}
+        */}
+        
 
-      {/* Resumen de respuestas */}
+      {/* Resumen de respuestas 
       {responses.length > 0 && (
         <Card className="bg-blue-50">
           <CardHeader>
@@ -445,6 +467,7 @@ export function DynamicQuestionsForm({
           </CardContent>
         </Card>
       )}
+        */}
     </div>
   )
 }

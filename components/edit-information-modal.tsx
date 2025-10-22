@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Edit3, Loader2, AlertCircle, CheckCircle } from "lucide-react"
+import { saveExploreDataToProfile } from "@/lib/api/enrollment-db"
 import { useState } from "react"
 
 interface FormData {
@@ -75,7 +76,9 @@ export function EditInformationModal({
       const response = await fetch(`/api/address/validate-zip/${zip}`)
       const data = await response.json()
       
-      if (data.valid) {
+      // API may return { valid: boolean } or { success: boolean }
+      const isValid = typeof data.valid === 'boolean' ? data.valid : !!data.success
+      if (isValid) {
         setZipCodeError("")
         setZipCodeValid(true)
         return true
@@ -206,8 +209,79 @@ export function EditInformationModal({
     if (formData.smokes && !validateLastTobaccoUse(formData.lastTobaccoUse)) isValid = false
 
     if (isValid) {
+      // Persist to Supabase users and to storage (exclude coverage fields)
+      try {
+        const exploreData = {
+          zip_code: formData.zipCode,
+          date_of_birth: formData.dateOfBirth,
+          gender: formData.gender,
+          is_smoker: !!formData.smokes,
+          last_tobacco_use: formData.smokes ? formData.lastTobaccoUse : undefined,
+        }
+        await saveExploreDataToProfile(exploreData)
+
+        // Persist local session data for quoting
+        try {
+          const mapped = {
+            zipCode: formData.zipCode,
+            dateOfBirth: formData.dateOfBirth,
+            gender: formData.gender,
+            smokes: !!formData.smokes,
+            lastTobaccoUse: formData.lastTobaccoUse,
+            coverageStartDate: formData.coverageStartDate,
+            paymentFrequency: formData.paymentFrequency,
+          }
+          sessionStorage.setItem('insuranceFormData', JSON.stringify(mapped))
+          // Keep explore_data for profile reuse
+          sessionStorage.setItem('explore_data', JSON.stringify(exploreData))
+          localStorage.setItem('explore_data', JSON.stringify(exploreData))
+        } catch {}
+      } catch (e) {
+        // Surface validation error block already exists via props.error, so keep silent here
+        console.error('Failed to persist user profile from EditInformationModal:', e)
+      }
+
       onUpdate()
     }
+  }
+
+  // Quick save should also persist to DB and storage without API quote
+  const handleQuickSaveClick = async () => {
+    let isValid = true
+    if (!(await validateZipCode(formData.zipCode))) isValid = false
+    if (!validateDateOfBirth(formData.dateOfBirth)) isValid = false
+    if (formData.smokes && !validateLastTobaccoUse(formData.lastTobaccoUse)) isValid = false
+    if (!isValid) return
+
+    try {
+      const exploreData = {
+        zip_code: formData.zipCode,
+        date_of_birth: formData.dateOfBirth,
+        gender: formData.gender,
+        is_smoker: !!formData.smokes,
+        last_tobacco_use: formData.smokes ? formData.lastTobaccoUse : undefined,
+      }
+      await saveExploreDataToProfile(exploreData)
+
+      try {
+        const mapped = {
+          zipCode: formData.zipCode,
+          dateOfBirth: formData.dateOfBirth,
+          gender: formData.gender,
+          smokes: !!formData.smokes,
+          lastTobaccoUse: formData.lastTobaccoUse,
+          coverageStartDate: formData.coverageStartDate,
+          paymentFrequency: formData.paymentFrequency,
+        }
+        sessionStorage.setItem('insuranceFormData', JSON.stringify(mapped))
+        sessionStorage.setItem('explore_data', JSON.stringify(exploreData))
+        localStorage.setItem('explore_data', JSON.stringify(exploreData))
+      } catch {}
+    } catch (e) {
+      console.error('Failed to quick-save user profile from EditInformationModal:', e)
+    }
+
+    onQuickSave()
   }
 
   return (
@@ -456,7 +530,7 @@ export function EditInformationModal({
             {/* Quick update button - saves data without API call */}
             <Button
               variant="outline"
-              onClick={onQuickSave}
+              onClick={handleQuickSaveClick}
               className="w-full h-10 rounded-full text-sm border-gray-300"
               disabled={isUpdating || isValidatingZip || !formData.zipCode || !formData.dateOfBirth || !formData.gender || !formData.coverageStartDate || !formData.paymentFrequency}
             >

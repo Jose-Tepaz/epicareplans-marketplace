@@ -7,19 +7,65 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/contexts/cart-context"
-import { Shield, Trash2, ArrowLeft, CheckCircle2 } from "lucide-react"
+import { Shield, Trash2, ArrowLeft, CheckCircle2, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/auth-context"
+import { saveExploreDataToProfile } from "@/lib/api/enrollment-db"
+import { getExploreDataFromSession, clearExploreDataFromSession } from "@/lib/utils/session-storage"
 
 export default function CheckoutPage() {
   const router = useRouter()
+  const { user, loading } = useAuth()
   const { items, removeItem, clearCart, totalPrice } = useCart()
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Verificar autenticación - si no está autenticado, redirigir a login
+  useEffect(() => {
+    if (!loading && !user) {
+      console.log('❌ Usuario no autenticado, redirigiendo a login...')
+      router.push('/login?redirect=/checkout&action=register-from-cart')
+    }
+  }, [user, loading, router])
+
+  // Si viene de registro, guardar datos de explore en el perfil
+  useEffect(() => {
+    if (user && !isSaving) {
+      const exploreData = getExploreDataFromSession()
+      console.log('🔍 Checkout - User authenticated:', !!user)
+      console.log('🔍 Checkout - Explore data from session:', exploreData)
+      
+      if (exploreData) {
+        console.log('💾 Guardando datos de explore en el perfil del usuario...')
+        console.log('💾 Datos a guardar:', exploreData)
+        setIsSaving(true)
+        saveExploreDataToProfile(exploreData)
+          .then(() => {
+            console.log('✅ Explore data saved to profile successfully')
+            // Limpiar sessionStorage después de guardar
+            clearExploreDataFromSession()
+          })
+          .catch(err => {
+            console.error('❌ Error saving explore data:', err)
+          })
+          .finally(() => {
+            setIsSaving(false)
+          })
+      } else {
+        console.log('❌ No explore data found in sessionStorage')
+        console.log('🔍 SessionStorage contents:', {
+          explore_data: sessionStorage.getItem('explore_data'),
+          insuranceFormData: sessionStorage.getItem('insuranceFormData')
+        })
+      }
+    }
+  }, [user, isSaving])
 
   const handleProceedToApplication = async () => {
     setIsProcessing(true)
@@ -28,6 +74,29 @@ export default function CheckoutPage() {
     router.push('/enrollment')
 
     setIsProcessing(false)
+  }
+
+  // Mostrar loading mientras verifica autenticación o guarda datos
+  if (loading || isSaving) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-gray-600 text-lg">
+              {isSaving ? 'Saving your information...' : 'Loading...'}
+            </p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
+  // Si no está autenticado, no mostrar nada (ya se redirigió)
+  if (!user) {
+    return null
   }
 
   if (items.length === 0) {

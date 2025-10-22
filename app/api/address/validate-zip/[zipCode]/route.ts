@@ -15,43 +15,34 @@ export async function GET(
       )
     }
 
-    console.log('Validating ZIP code:', zipCode)
+    console.log('🔍 Validating ZIP code with real API:', zipCode)
 
-    // Para testing, usar datos mock en lugar de llamada externa
-    const mockAddressInfo = [
-      {
-        county: "MIDDLESEX",
-        city: "CARTERET",
-        state: "NJ",
-        countyFipsCode: "023",
-        stateFipsCode: null,
-        deliverable: true,
-        preferred: true
-      }
-    ]
-
-    // Mapear ZIP codes conocidos a estados
-    const zipCodeMap: { [key: string]: string } = {
-      '07001': 'NJ',
-      '33101': 'FL', 
-      '90210': 'CA',
-      '10001': 'NY',
-      '60601': 'IL'
+    // Usar el nuevo endpoint de StateAbbreviation
+    const stateAbbreviation = await addressAPI.getStateAbbreviationByZipCode(zipCode)
+    
+    console.log('📊 State abbreviation result:', stateAbbreviation)
+    
+    if (!stateAbbreviation) {
+      console.log('❌ ZIP code not found or invalid:', zipCode)
+      return NextResponse.json({
+        success: false,
+        error: 'ZIP code not found',
+        message: 'The ZIP code you entered is not valid. Please enter a valid 5-digit ZIP code.'
+      })
     }
 
-    const state = zipCodeMap[zipCode] || 'CA'
-    const city = zipCode === '07001' ? 'CARTERET' : 'UNKNOWN'
-    const county = zipCode === '07001' ? 'MIDDLESEX' : 'UNKNOWN'
+    console.log('✅ ZIP code validation successful:', {
+      zipCode,
+      state: stateAbbreviation
+    })
 
     return NextResponse.json({
       success: true,
       data: {
-        state: state,
-        city: city,
-        county: county,
+        state: stateAbbreviation,
+        stateAbbreviation: stateAbbreviation,
         deliverable: true,
-        preferred: true,
-        allOptions: mockAddressInfo
+        preferred: true
       }
     })
 

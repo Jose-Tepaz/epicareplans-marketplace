@@ -8,16 +8,22 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import img1 from "@/public/images/ilustration-1.png"
 import img2 from "@/public/images/ilustration-2.png"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { AlertCircleIcon, CalendarIcon, CheckCircleIcon, Loader2 } from "lucide-react" 
+import { AlertCircleIcon, CalendarIcon, CheckCircleIcon, Loader2 } from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
+import { getUserProfile, saveExploreDataToProfile } from "@/lib/api/enrollment-db"
+import { saveExploreDataToSession, clearExploreDataFromSession } from "@/lib/utils/session-storage" 
 
 export default function ExplorePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { user, loading } = useAuth()
+  
   const [step, setStep] = useState(1)
   const [hasAccount, setHasAccount] = useState<boolean | null>(null)
   const [registrationStep, setRegistrationStep] = useState(1)
@@ -25,7 +31,7 @@ export default function ExplorePage() {
   // Loading states
   const [isValidating, setIsValidating] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
 
   const [zipCode, setZipCode] = useState("")
   const [dateOfBirth, setDateOfBirth] = useState("")
@@ -54,13 +60,154 @@ export default function ExplorePage() {
   }, [coverageStartDate])
   const [paymentFrequency, setPaymentFrequency] = useState("")
 
-  // Login state
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  // Detectar si debe saltar la pregunta de cuenta y si usuario ya está logueado
+  useEffect(() => {
+    const skipAccountQuestion = searchParams.get('skip-account-question')
+    
+    console.log('🔍 Explore - useEffect ejecutado:', { 
+      user: user?.email, 
+      skipAccountQuestion,
+      loading 
+    })
+    
+    if (loading) {
+      console.log('⏳ Auth está cargando, esperando...')
+      return
+    }
+    
+    if (skipAccountQuestion === 'true' || user) {
+      console.log('✅ Usuario detectado o skip-account-question=true')
+      // Saltar pregunta de cuenta
+      setHasAccount(false)
+      setStep(2)
+      
+      // Si hay usuario, cargar su perfil
+      if (user) {
+        console.log('🔄 Cargando perfil del usuario...')
+        loadUserProfile()
+      } else {
+        console.log('ℹ️ No hay usuario, mostrando formulario vacío')
+        setIsLoadingProfile(false)
+      }
+    } else {
+      console.log('ℹ️ No hay usuario ni skip-account-question, mostrando pregunta inicial')
+      setIsLoadingProfile(false)
+    }
+  }, [user, searchParams, loading])
+
+  // Cargar datos del perfil del usuario
+  const loadUserProfile = async () => {
+    console.log('🔍 loadUserProfile - Iniciando carga de perfil...')
+    setIsLoadingProfile(true)
+    
+    try {
+      const profile = await getUserProfile()
+      console.log('🔍 loadUserProfile - Respuesta de getUserProfile:', profile)
+      
+      if (!profile) {
+        console.log('⚠️ No se encontró perfil para el usuario')
+        setIsLoadingProfile(false)
+        return
+      }
+      
+      // Pre-llenar datos básicos
+      console.log('📝 Pre-llenando datos del formulario...')
+      if (profile.date_of_birth) {
+        console.log('  ✓ date_of_birth:', profile.date_of_birth)
+        setDateOfBirth(profile.date_of_birth)
+      }
+      if (profile.gender) {
+        console.log('  ✓ gender:', profile.gender)
+        setGender(profile.gender)
+      }
+      if (profile.is_smoker !== null && profile.is_smoker !== undefined) {
+        console.log('  ✓ is_smoker:', profile.is_smoker)
+        setSmokes(profile.is_smoker)
+      }
+      if (profile.last_tobacco_use) {
+        console.log('  ✓ last_tobacco_use:', profile.last_tobacco_use)
+        setLastTobaccoUse(profile.last_tobacco_use)
+      }
+      if (profile.zip_code) {
+        console.log('  ✓ zip_code:', profile.zip_code)
+        setZipCode(profile.zip_code)
+      }
+      if (profile.coverage_start_date) {
+        console.log('  ✓ coverage_start_date:', profile.coverage_start_date)
+        setCoverageStartDate(profile.coverage_start_date)
+      }
+      if (profile.payment_frequency) {
+        console.log('  ✓ payment_frequency:', profile.payment_frequency)
+        setPaymentFrequency(profile.payment_frequency)
+      }
+      
+      console.log('✅ Profile data loaded completo:', { 
+        dateOfBirth: profile.date_of_birth,
+        gender: profile.gender,
+        is_smoker: profile.is_smoker,
+        zip_code: profile.zip_code,
+        coverage_start_date: profile.coverage_start_date,
+        payment_frequency: profile.payment_frequency
+      })
+
+      // Si tiene TODOS los datos necesarios, redirigir directamente a insurance-options
+      const hasAllRequiredData = 
+        profile.zip_code && 
+        profile.date_of_birth && 
+        profile.gender && 
+        (profile.is_smoker !== null && profile.is_smoker !== undefined) &&
+        profile.coverage_start_date &&
+        profile.payment_frequency
+
+      console.log('🔍 Verificación de datos completos:', {
+        hasZipCode: !!profile.zip_code,
+        hasDateOfBirth: !!profile.date_of_birth,
+        hasGender: !!profile.gender,
+        hasSmokerInfo: (profile.is_smoker !== null && profile.is_smoker !== undefined),
+        hasCoverageStartDate: !!profile.coverage_start_date,
+        hasPaymentFrequency: !!profile.payment_frequency,
+        hasAllRequiredData
+      })
+
+      if (hasAllRequiredData) {
+        console.log('✅ Usuario tiene todos los datos, redirigiendo a insurance-options...')
+        
+        // Guardar datos en session storage para insurance-options
+        saveExploreDataToSession({
+          zipCode: profile.zip_code,
+          dateOfBirth: profile.date_of_birth,
+          gender: profile.gender,
+          smokes: profile.is_smoker,
+          lastTobaccoUse: profile.last_tobacco_use || '',
+          coverageStartDate: profile.coverage_start_date,
+          paymentFrequency: profile.payment_frequency
+        })
+        
+        console.log('💾 Datos guardados en sessionStorage')
+        
+        // Redirigir a insurance-options
+        console.log('🚀 Redirigiendo a /insurance-options...')
+        router.push('/insurance-options')
+        return
+      } else {
+        console.log('⚠️ Faltan datos, mostrando formulario para completar')
+      }
+    } catch (error) {
+      console.error('❌ Error loading profile:', error)
+    } finally {
+      setIsLoadingProfile(false)
+    }
+  }
 
   const handleAccountChoice = (choice: boolean) => {
-    setHasAccount(choice)
-    setStep(2)
+    if (choice === true) {
+      // Redirigir a login
+      router.push('/login?redirect=/explore&action=after-login')
+    } else {
+      // Continuar con explore
+      setHasAccount(false)
+      setStep(2)
+    }
   }
 
   // Validation functions
@@ -192,9 +339,34 @@ export default function ExplorePage() {
       // Prepare form data for API
       const formData = { zipCode, dateOfBirth, gender, smokes, lastTobaccoUse, coverageStartDate, paymentFrequency }
 
-      // Save form data to sessionStorage immediately
-      console.log('Saving form data to sessionStorage:', formData)
+      // Save form data to sessionStorage immediately (formato anterior)
+      console.log('💾 Saving form data to sessionStorage:', formData)
       sessionStorage.setItem('insuranceFormData', JSON.stringify(formData))
+
+      // También guardar datos de explore para el perfil (formato nuevo)
+      const exploreData = {
+        zip_code: zipCode,
+        date_of_birth: dateOfBirth,
+        gender: gender,
+        is_smoker: smokes || false,
+        last_tobacco_use: smokes ? lastTobaccoUse : undefined,
+      }
+      saveExploreDataToSession(exploreData)
+      console.log('💾 Saving explore data for profile:', exploreData)
+
+      // Si el usuario está autenticado, guardar inmediatamente en el perfil
+      if (user) {
+        try {
+          console.log('✅ User is authenticated, saving explore data to profile...')
+          await saveExploreDataToProfile(exploreData)
+          console.log('✅ Explore data saved to profile successfully')
+          // NO limpiar sessionStorage aquí - checkout lo necesita
+          console.log('✅ Explore data kept in sessionStorage for checkout flow')
+        } catch (error) {
+          console.error('❌ Error saving explore data to profile:', error)
+          // Continuar de todas formas
+        }
+      }
 
       try {
         const response = await fetch('/api/insurance/quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) })
@@ -221,22 +393,6 @@ export default function ExplorePage() {
       setRegistrationStep(registrationStep - 1)
     } else {
       handleBackToAccountQuestion()
-    }
-  }
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoggingIn(true)
-    
-    try {
-      // Simular llamada a API de login
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      console.log("[v0] Login attempt:", { email, password: "***" })
-      // Aquí iría la lógica real de login
-    } catch (error) {
-      console.error('Error during login:', error)
-    } finally {
-      setIsLoggingIn(false)
     }
   }
 
@@ -706,101 +862,31 @@ export default function ExplorePage() {
     )
   }
 
-  if (step === 2 && hasAccount === true) {
+  // Si está cargando el perfil, mostrar loading
+  if (loading || isLoadingProfile) {
     return (
-      <div className="min-h-screen flex">
-        {/* Left side - Orange with illustrations */}
-        <div className="hidden md:flex md:w-1/2 bg-[#FF7A45] relative overflow-hidden">
-          {/* Illustration - Person with dog */}
-          <div className="absolute left-8 bottom-0 w-48 h-80 lg:w-56 lg:h-96">
-            <Image
-              src="/images/design-mode/IdWjh1_1_.png"
-              alt="Person with phone and dog"
-              fill
-              className="object-contain object-bottom"
-            />
-          </div>
-
-          <div className="absolute right-0 bottom-0 w-64 h-96 lg:w-80 lg:h-[500px]">
-            <Image
-              src="/images/design-mode/Group%205.png"
-              alt="Houses, car and medical clipboard"
-              fill
-              className="object-contain object-bottom"
-            />
-          </div>
+      <div className="min-h-screen bg-primary flex items-center justify-center">
+        <div className="text-white text-center">
+          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4" />
+          <p className="text-xl">Loading...</p>
         </div>
+      </div>
+    )
+  }
 
-        {/* Right side - White with login form */}
-        <div className="w-full md:w-1/2 bg-white flex items-center justify-center p-8">
-          <div className="w-full max-w-md">
-            <div className="border-2 border-gray-300 rounded-3xl p-8 md:p-12">
-              <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Login</h1>
-              <p className="text-gray-600 mb-8">Login with the data you entered during your registration.</p>
-
-              <form onSubmit={handleLogin} className="space-y-6">
-                <div>
-                  <Label htmlFor="email" className="text-gray-900 font-semibold mb-2 block">
-                    Email
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="john.doe@gmail.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="input-epicare"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="password" className="text-gray-900 font-semibold mb-2 block">
-                    Password
-                  </Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="input-epicare"
-                    required
-                  />
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full rounded-full bg-[#4ABADB] hover:bg-[#3AA0C5] text-white  text-lg font-semibold"
-                  disabled={isLoggingIn}
-                >
-                  {isLoggingIn ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Iniciando sesión...
-                    </>
-                  ) : (
-                    'Log in'
-                  )}
-                </Button>
-
-                <div className="text-center">
-                  <Link href="/forgot-password" className="text-gray-600 hover:text-gray-900 text-sm">
-                    Did you forget your password?
-                  </Link>
-                </div>
-              </form>
-            </div>
-
-            {/* Footer links */}
-            <div className="flex justify-end gap-6 mt-8 text-sm text-gray-600">
-              <Link href="/cookies" className="hover:text-gray-900">
-                Cookies
-              </Link>
-              <Link href="/legal-policy" className="hover:text-gray-900">
-                Legal policy
-              </Link>
-            </div>
+  // Mostrar loading mientras verifica datos del usuario
+  if (isLoadingProfile) {
+    return (
+      <div className="min-h-screen bg-primary relative overflow-hidden">
+        <div className="relative z-10 flex items-center justify-center min-h-screen px-4 py-20">
+          <div className="bg-white/10 backdrop-blur-sm border-2 border-white/30 rounded-3xl p-12 text-center">
+            <Loader2 className="h-12 w-12 animate-spin mx-auto text-white mb-4" />
+            <h2 className="text-2xl font-bold text-white mb-2">
+              Verificando tu información...
+            </h2>
+            <p className="text-white/80">
+              Un momento por favor
+            </p>
           </div>
         </div>
       </div>

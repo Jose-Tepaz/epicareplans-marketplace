@@ -1,5 +1,9 @@
 "use client"
 
+import { ArrowLeft } from "lucide-react"
+import Link from "next/link"
+import { useAuth } from "@/contexts/auth-context"
+
 interface Plan {
   id: string
   name: string
@@ -12,14 +16,25 @@ interface EnrollmentSidebarProps {
 }
 
 export function EnrollmentSidebar({ selectedPlans, totalPrice }: EnrollmentSidebarProps) {
+  const { user } = useAuth()
+  const firstName = (user as any)?.user_metadata?.first_name || user?.email?.split("@")[0] || "Guest"
+  const lastName = (user as any)?.user_metadata?.last_name || ""
+  const email = user?.email || ""
   return (
     <div className="w-[450px] bg-primary text-white p-8 flex flex-col fixed h-screen">
-      {/* Logo */}
-      <div className="mb-12">
-        <h2 className="text-3xl font-bold">Epicare</h2>
-        <p className="text-sm text-white/80">Plans</p>
+
+      {/* back to checkout */}
+      <div className="flex items-center gap-2 mb-4">
+       
+        <Link href="/checkout" className=" flex items-center gap-2 text-sm text-white/80">
+        <ArrowLeft className="w-4 h-4 mr-2" />
+        Back to checkout</Link>
       </div>
-      
+      {/* User information */}
+      <div className="mb-12">
+        <h2 className="text-3xl font-bold">{firstName} {lastName}</h2>
+        <p className="text-sm text-white/80">{email}</p>
+      </div>
 
       {/* Plans in cart */}
       <div className="flex-1 overflow-y-auto">

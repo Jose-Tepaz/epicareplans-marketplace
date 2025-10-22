@@ -6,6 +6,7 @@ import { useCart } from "@/contexts/cart-context"
 import { toast } from "sonner"
 import type { EnrollmentFormState } from "@/lib/types/enrollment"
 import { EnrollmentLayout } from "@/components/enrollment-layout"
+import { EnrollmentErrorNotification } from "@/components/enrollment-error-notification"
 
 const TOTAL_STEPS = 9
 
@@ -15,6 +16,7 @@ export default function EnrollmentPage() {
   const [currentStep, setCurrentStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCartLoaded, setIsCartLoaded] = useState(false)
+  const [enrollmentError, setEnrollmentError] = useState<any>(null)
 
   // Form state
   const [formData, setFormData] = useState<EnrollmentFormState>({
@@ -210,11 +212,13 @@ export default function EnrollmentPage() {
         return { isValid: true }
 
       case 8: // Payment Information (antes Paso 8)
-        if (!formData.accountHolderFirstName.trim()) {
-          return { isValid: false, message: 'Account holder first name is required' }
-        }
-        if (!formData.accountHolderLastName.trim()) {
-          return { isValid: false, message: 'Account holder last name is required' }
+        if (!formData.submitWithoutPayment) {
+          if (!formData.accountHolderFirstName.trim()) {
+            return { isValid: false, message: 'Account holder first name is required' }
+          }
+          if (!formData.accountHolderLastName.trim()) {
+            return { isValid: false, message: 'Account holder last name is required' }
+          }
         }
 
         if (!formData.submitWithoutPayment) {
@@ -281,6 +285,16 @@ export default function EnrollmentPage() {
     setIsSubmitting(true)
 
     try {
+      // Validar datos antes de enviar
+      const validationErrors = validateEnrollmentData(formData)
+      if (validationErrors.length > 0) {
+        toast.error('Errores de validación', {
+          description: validationErrors.join(', ')
+        })
+        setIsSubmitting(false)
+        return
+      }
+
       // Build enrollment request
       const enrollmentRequest = buildEnrollmentRequest(formData)
 
@@ -297,21 +311,153 @@ export default function EnrollmentPage() {
       }
 
       const result = await response.json()
-      console.log('Enrollment successful:', result)
+      console.log('Enrollment response:', result)
 
-      // Clear cart and form data
-      clearCart()
-      sessionStorage.removeItem('enrollmentFormData')
+      // Check if enrollment was successful
+      if (result.success) {
+        console.log('Enrollment successful:', result)
+        
+        // Clear cart and form data
+        clearCart()
+        sessionStorage.removeItem('enrollmentFormData')
 
-      // Redirect to success page
-      router.push('/application-success')
+        // Redirect to success page
+        router.push('/application-success')
+      } else {
+        // Store error for detailed display
+        setEnrollmentError(result)
+        
+        // Log detailed error for debugging
+        console.error('Enrollment failed:', {
+          message: result.message,
+          data: result.data,
+          warning: result.warning
+        })
+      }
 
     } catch (error) {
       console.error('Error submitting enrollment:', error)
-      alert('Error submitting enrollment. Please try again.')
+      
+      // Handle network or other errors
+      let errorMessage = 'Error de conexión'
+      let errorDescription = 'No se pudo conectar con el servidor. Por favor, verifica tu conexión e intenta nuevamente.'
+      
+      if (error instanceof Error) {
+        if (error.message.includes('500')) {
+          errorMessage = 'Error del servidor'
+          errorDescription = 'El servidor está experimentando problemas. Por favor, intenta nuevamente en unos minutos.'
+        } else if (error.message.includes('400')) {
+          errorMessage = 'Error de validación'
+          errorDescription = 'Los datos enviados no son válidos. Por favor, revisa la información.'
+        }
+      }
+      
+      toast.error(errorMessage, {
+        description: errorDescription,
+        duration: 10000
+      })
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  // Función auxiliar para validar tarjeta con algoritmo de Luhn
+  const validateLuhn = (cardNumber: string): boolean => {
+    let sum = 0
+    let isEven = false
+    
+    for (let i = cardNumber.length - 1; i >= 0; i--) {
+      let digit = parseInt(cardNumber[i], 10)
+      
+      if (isEven) {
+        digit *= 2
+        if (digit > 9) {
+          digit -= 9
+        }
+      }
+      
+      sum += digit
+      isEven = !isEven
+    }
+    
+    return sum % 10 === 0
+  }
+
+  const validateEnrollmentData = (data: EnrollmentFormState): string[] => {
+    const errors: string[] = []
+    
+    // Campos requeridos
+    if (!data.firstName?.trim()) errors.push("First name is required")
+    if (!data.lastName?.trim()) errors.push("Last name is required")
+    if (!data.email?.trim()) errors.push("Email is required")
+    if (!data.phone?.trim()) errors.push("Phone is required")
+    if (!data.address1?.trim()) errors.push("Address is required")
+    if (!data.city?.trim()) errors.push("City is required")
+    if (!data.state?.trim()) errors.push("State is required")
+    if (!data.zipCode?.trim()) errors.push("ZIP code is required")
+    if (!data.dateOfBirth) errors.push("Date of birth is required")
+    if (!data.ssn?.trim()) errors.push("SSN is required")
+    if (!data.gender?.trim()) errors.push("Gender is required")
+    if (!data.effectiveDate) errors.push("Effective date is required")
+    if (data.selectedPlans.length === 0) errors.push("At least one plan must be selected")
+    
+    // Validar formatos
+    if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+      errors.push("Invalid email format")
+    }
+    
+    const phoneDigits = data.phone?.replace(/\D/g, '')
+    if (phoneDigits && phoneDigits.length !== 10) {
+      errors.push("Phone must be 10 digits")
+    }
+    
+    const ssnDigits = data.ssn?.replace(/\D/g, '')
+    if (ssnDigits && ssnDigits.length !== 9) {
+      errors.push("SSN must be 9 digits")
+    }
+    
+    if (data.zipCode && !/^\d{5}$/.test(data.zipCode)) {
+      errors.push("ZIP code must be 5 digits")
+    }
+    
+    // Validar payment
+    if (!data.submitWithoutPayment) {
+      if (!data.accountHolderFirstName?.trim()) errors.push("Account holder first name is required")
+      if (!data.accountHolderLastName?.trim()) errors.push("Account holder last name is required")
+      
+      if (data.paymentMethod === 'credit_card') {
+        if (!data.creditCardNumber?.trim()) errors.push("Credit card number is required")
+        if (!data.expirationMonth) errors.push("Expiration month is required")
+        if (!data.expirationYear) errors.push("Expiration year is required")
+        if (!data.cvv?.trim()) errors.push("CVV is required")
+        if (!data.cardBrand?.trim()) errors.push("Card brand is required")
+        
+        // Validar número de tarjeta con algoritmo de Luhn
+        const cardNumber = data.creditCardNumber?.replace(/\D/g, '')
+        if (cardNumber && !validateLuhn(cardNumber)) {
+          errors.push("Invalid credit card number")
+        }
+      } else {
+        if (!data.routingNumber?.trim()) errors.push("Routing number is required")
+        if (!data.accountNumber?.trim()) errors.push("Account number is required")
+        if (!data.bankName?.trim()) errors.push("Bank name is required")
+        if (!data.accountType) errors.push("Account type is required")
+        
+        if (data.routingNumber && !/^\d{9}$/.test(data.routingNumber)) {
+          errors.push("Routing number must be 9 digits")
+        }
+      }
+    }
+    
+    // Validar beneficiaries allocation
+    if (data.beneficiaries.length > 0) {
+      const totalAllocation = data.beneficiaries.reduce((sum, ben) => sum + ben.allocationPercentage, 0)
+      if (totalAllocation !== 100) {
+        errors.push(`Beneficiary allocation must equal 100% (current: ${totalAllocation}%)`)
+      }
+    }
+    
+    return errors
   }
 
   const buildEnrollmentRequest = (data: EnrollmentFormState) => {
@@ -332,19 +478,28 @@ export default function EnrollmentPage() {
         isEFulfillment: data.isEFulfillment,
         applicants: [
           {
+            applicantId: "primary-001",  // AGREGAR
             firstName: data.firstName,
             middleInitial: data.middleInitial,
             lastName: data.lastName,
             gender: data.gender,
             dob: new Date(data.dateOfBirth).toISOString(),
             smoker: data.smoker,
-            relationship: data.relationship,
+              relationship: data.relationship === 'Self' ? 'Primary' : data.relationship,
             ssn: data.ssn,
             weight: Number(data.weight),
             heightFeet: Number(data.heightFeet),
             heightInches: Number(data.heightInches),
             dateLastSmoked: data.dateLastSmoked ? new Date(data.dateLastSmoked).toISOString() : undefined,
             hasPriorCoverage: data.hasPriorCoverage,
+            eligibleRateTier: "Standard",
+            quotedRateTier: "Standard",
+            phoneNumbers: [{  // AGREGAR
+              phoneNumber: data.phone,
+              phoneType: "Mobile",
+              allowTextMessaging: true,
+              allowServiceCalls: true
+            }],
             ...(data.hasMedicare && {
               medSuppInfo: {
                 medicarePartAEffectiveDate: data.medicarePartAEffectiveDate ? new Date(data.medicarePartAEffectiveDate).toISOString() : undefined,
@@ -356,7 +511,12 @@ export default function EnrollmentPage() {
             medications: data.medications,
             questionResponses: data.questionResponses
           },
-          ...data.additionalApplicants
+          ...data.additionalApplicants.map((app, index) => ({
+            ...app,
+            applicantId: `additional-${String(index + 1).padStart(3, '0')}`,  // AGREGAR
+            dob: new Date(app.dob).toISOString(),
+            dateLastSmoked: app.dateLastSmoked ? new Date(app.dateLastSmoked).toISOString() : undefined
+          }))
         ]
       },
       coverages: data.selectedPlans.map(plan => ({
@@ -369,19 +529,25 @@ export default function EnrollmentPage() {
         isAutomaticLoanProvisionOptedIn: data.isAutomaticLoanProvisionOptedIn,
         applicants: [
           {
-            applicantId: "primary-001",
-            hasPriorCoverage: data.hasPriorCoverage,
-            eligibleRateTier: "Standard",
-            quotedRateTier: "Standard",
-            questionResponses: data.questionResponses
+            applicantId: "primary-001"
+            // REMOVED: hasPriorCoverage, questionResponses, eligibleRateTier, quotedRateTier 
+            // (should only be in demographics.applicants)
           }
         ],
-        beneficiaries: data.beneficiaries.map(ben => ({
-          ...ben,
-          dateOfBirth: new Date(ben.dateOfBirth).toISOString()
+        beneficiaries: data.beneficiaries.map((ben, index) => ({
+          beneficiaryId: index + 1,  // AGREGAR
+          firstName: ben.firstName,
+          middleName: ben.middleName,
+          lastName: ben.lastName,
+          relationship: ben.relationship,
+          allocationPercentage: ben.allocationPercentage,
+          dateOfBirth: new Date(ben.dateOfBirth).toISOString(),
+          addresses: ben.addresses,
+          phoneNumbers: ben.phoneNumbers
         }))
       })),
       paymentInformation: {
+        accountType: data.paymentMethod === 'credit_card' ? 'CreditCard' : 'ACH',  // AGREGAR
         accountHolderFirstName: data.accountHolderFirstName,
         accountHolderLastName: data.accountHolderLastName,
         ...(data.paymentMethod === 'credit_card' ? {
@@ -394,7 +560,7 @@ export default function EnrollmentPage() {
           routingNumber: data.routingNumber,
           accountNumber: data.accountNumber,
           bankName: data.bankName,
-          accountType: data.accountType,
+          bankDraft: data.accountType === 'checking' ? 'Checking' : 'Savings',
           desiredDraftDate: Number(data.desiredDraftDate)
         }),
         isSubmitWithoutPayment: data.submitWithoutPayment
@@ -404,8 +570,9 @@ export default function EnrollmentPage() {
         clientIPAddress: clientIP
       },
       attestationInformation: {
+        referenceId: `APP-${Date.now()}`,  // AGREGAR
         dateCollected: new Date().toISOString(),
-        type: "Signature",
+        type: "ApplicantEsign",  // CAMBIAR
         value: data.signature,
         clientIPAddress: clientIP
       },
@@ -416,17 +583,32 @@ export default function EnrollmentPage() {
   const progress = (currentStep / TOTAL_STEPS) * 100
 
   return (
-    <EnrollmentLayout
-      currentStep={currentStep}
-      totalSteps={TOTAL_STEPS}
-      formData={formData}
-      updateFormData={updateFormData}
-      onNext={handleNext}
-      onBack={handleBack}
-      onStepClick={handleStepClick}
-      onSubmit={handleSubmit}
-      isSubmitting={isSubmitting}
-      progress={progress}
-    />
+    <>
+      {enrollmentError && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <EnrollmentErrorNotification
+            error={enrollmentError}
+            onRetry={() => {
+              setEnrollmentError(null)
+              // Optionally retry the enrollment
+            }}
+            onDismiss={() => setEnrollmentError(null)}
+          />
+        </div>
+      )}
+      
+      <EnrollmentLayout
+        currentStep={currentStep}
+        totalSteps={TOTAL_STEPS}
+        formData={formData}
+        updateFormData={updateFormData}
+        onNext={handleNext}
+        onBack={handleBack}
+        onStepClick={handleStepClick}
+        onSubmit={handleSubmit}
+        isSubmitting={isSubmitting}
+        progress={progress}
+      />
+    </>
   )
 }

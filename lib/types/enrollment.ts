@@ -41,6 +41,7 @@ export interface MedSuppInfo {
 }
 
 export interface Applicant {
+  applicantId: string  // Cambiar de opcional a requerido
   gender: string
   dob: string
   smoker: boolean
@@ -57,14 +58,13 @@ export interface Applicant {
   eligibleRateTier?: string
   quotedRateTier?: string
   questionResponses?: QuestionResponse[]
-  applicantId?: string
   medSuppInfo?: MedSuppInfo
   phoneNumbers?: PhoneNumber[]
   medications?: Medication[]
 }
 
 export interface Beneficiary {
-  beneficiaryId?: number
+  beneficiaryId: number  // Cambiar de opcional a requerido
   firstName: string
   middleName?: string
   lastName: string
@@ -102,6 +102,7 @@ export interface Coverage {
 }
 
 export interface PaymentInformation {
+  accountType: 'ACH' | 'CreditCard' | 'DirectBill'  // AGREGAR - Campo requerido
   accountHolderFirstName: string
   accountHolderLastName: string
   // Credit Card
@@ -114,7 +115,7 @@ export interface PaymentInformation {
   routingNumber?: string
   accountNumber?: string
   bankName?: string
-  accountType?: 'checking' | 'savings'
+  accountTypeBank?: 'checking' | 'savings'  // RENOMBRAR para evitar conflicto
   bankDraft?: string
   initialDraftDate?: string
   desiredDraftDate?: number

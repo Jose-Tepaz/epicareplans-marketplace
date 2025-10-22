@@ -12,16 +12,25 @@ import { InsuranceEmptyState } from "@/components/insurance-empty-state"
 import { EditInformationModal } from "@/components/edit-information-modal"
 import { FloatingCartButton } from "@/components/floating-cart-button"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InsurancePlan } from "@/lib/types/insurance"
 import { useClientOnly } from "@/hooks/use-client-only"
-import { Edit3 } from "lucide-react"
+import { Edit3, AlertCircle, Loader2 } from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
+import { getUserProfile } from "@/lib/api/enrollment-db"
+import { useRouter } from "next/navigation"
 
 export default function InsuranceOptionsPage() {
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
+  const isClient = useClientOnly()
+  
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [usingFallbackData, setUsingFallbackData] = useState(false)
-  const isClient = useClientOnly()
+  const [isFetchingPlans, setIsFetchingPlans] = useState(false)
+  const [hasStoredFormData, setHasStoredFormData] = useState(false)
 
   // Filter states
   const [selectedPlanType, setSelectedPlanType] = useState<string>("all")
@@ -32,6 +41,10 @@ export default function InsuranceOptionsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const [showApiWarning, setShowApiWarning] = useState(false)
+
+  // Profile validation states
+  const [missingFields, setMissingFields] = useState<string[]>([])
+  const [isCheckingProfile, setIsCheckingProfile] = useState(false)
   
   // Form data states
   const [formData, setFormData] = useState({
@@ -120,6 +133,41 @@ export default function InsuranceOptionsPage() {
     },
   ]
 
+  // Verificar si el usuario autenticado tiene campos faltantes en su perfil
+  useEffect(() => {
+    if (user && isClient) {
+      checkRequiredFields()
+    }
+  }, [user, isClient])
+
+  const checkRequiredFields = async () => {
+    setIsCheckingProfile(true)
+    try {
+      const profile = await getUserProfile()
+      const missing = []
+
+      // Verificar campos requeridos de explore
+      if (!profile?.zip_code) missing.push('ZIP Code')
+      if (!profile?.date_of_birth) missing.push('Date of Birth')
+      if (!profile?.gender) missing.push('Gender')
+      if (profile?.is_smoker === null || profile?.is_smoker === undefined) {
+        missing.push('Smoking Status')
+      }
+
+      if (missing.length > 0) {
+        console.log('❌ Missing required fields:', missing)
+        setMissingFields(missing)
+      } else {
+        console.log('✅ All required profile fields are present')
+        setMissingFields([])
+      }
+    } catch (error) {
+      console.error('❌ Error checking profile fields:', error)
+    } finally {
+      setIsCheckingProfile(false)
+    }
+  }
+
   useEffect(() => {
     // Only run on client side to avoid hydration issues
     if (!isClient) return;
@@ -165,13 +213,156 @@ export default function InsuranceOptionsPage() {
         const data = JSON.parse(storedFormData)
         console.log('Loaded form data from sessionStorage:', data)
         setFormData(data)
+        setHasStoredFormData(true)
       } catch (error) {
         console.error('Error parsing stored form data:', error)
       }
     } else {
-      console.log('No stored form data found')
+      // Fallback: intentar con explore_data
+      const exploreData = sessionStorage.getItem('explore_data') || localStorage.getItem('explore_data')
+      if (exploreData) {
+        try {
+          const e = JSON.parse(exploreData)
+          const mapped = {
+            zipCode: e.zip_code || '',
+            dateOfBirth: e.date_of_birth || '',
+            gender: e.gender || '',
+            smokes: !!e.is_smoker,
+            lastTobaccoUse: e.last_tobacco_use || '',
+            coverageStartDate: '',
+            paymentFrequency: ''
+          }
+          console.log('Mapped form data from explore_data:', mapped)
+          setFormData(mapped)
+          setHasStoredFormData(true)
+        } catch (err) {
+          console.error('Error parsing explore_data:', err)
+        }
+      } else {
+        console.log('No stored form data found')
+      }
     }
   }, [isClient])
+
+  // When authenticated, prefer Supabase profile over any local/session values for core fields
+  useEffect(() => {
+    const syncFromProfile = async () => {
+      if (!user) return
+      try {
+        const profile = await getUserProfile()
+        if (!profile) return
+        const merged = {
+          ...formData,
+          zipCode: profile.zip_code || formData.zipCode || '',
+          dateOfBirth: profile.date_of_birth || formData.dateOfBirth || '',
+          gender: profile.gender || formData.gender || '',
+          smokes: typeof formData.smokes === 'boolean' ? formData.smokes : !!profile.is_smoker,
+          lastTobaccoUse: formData.lastTobaccoUse || profile.last_tobacco_use || '',
+        }
+        setFormData(merged)
+        try {
+          sessionStorage.setItem('insuranceFormData', JSON.stringify(merged))
+        } catch {}
+      } catch (e) {
+        console.error('Failed to sync form data from profile:', e)
+      }
+    }
+    if (user && isClient) {
+      syncFromProfile()
+    }
+  }, [user, isClient])
+
+  // Try to auto-fetch plans using stored/profile data when fallback is active
+  useEffect(() => {
+    const shouldAttemptAutoFetch = () => {
+      // If we already have non-fallback plans, skip
+      if (!usingFallbackData) return false
+      // Avoid parallel fetches
+      if (isFetchingPlans) return false
+      // Require either: user with no missing fields, or stored form data for guests
+      if (user && missingFields.length === 0) return true
+      if (!user && hasStoredFormData) return true
+      return false
+    }
+
+    const buildPayload = async () => {
+      // Prefer session formData; merge with profile for missing pieces
+      let payload = { ...formData }
+      try {
+        if (user) {
+          const profile = await getUserProfile()
+          payload = {
+            zipCode: payload.zipCode || profile?.zip_code || '',
+            dateOfBirth: payload.dateOfBirth || profile?.date_of_birth || '',
+            gender: payload.gender || profile?.gender || '',
+            smokes: typeof payload.smokes === 'boolean' ? payload.smokes : !!profile?.is_smoker,
+            lastTobaccoUse: payload.lastTobaccoUse || profile?.last_tobacco_use || '',
+            // Defaults if absent
+            coverageStartDate: payload.coverageStartDate || new Date(Date.now() + 86400000).toISOString().split('T')[0],
+            paymentFrequency: payload.paymentFrequency || 'monthly'
+          }
+        } else {
+          // Guest: ensure defaults
+          payload.coverageStartDate = payload.coverageStartDate || new Date(Date.now() + 86400000).toISOString().split('T')[0]
+          payload.paymentFrequency = payload.paymentFrequency || 'monthly'
+        }
+      } catch (e) {
+        console.error('Error building payload from profile:', e)
+      }
+      return payload
+    }
+
+    const fetchPlans = async () => {
+      try {
+        setIsFetchingPlans(true)
+        const payload = await buildPayload()
+        // Check essential fields
+        if (!payload.zipCode || !payload.dateOfBirth || !payload.gender) {
+          console.log('Missing essential fields to auto-fetch plans, skipping')
+          return
+        }
+        console.log('Auto-fetching plans with payload:', payload)
+        const resp = await fetch('/api/insurance/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            zipCode: payload.zipCode,
+            dateOfBirth: payload.dateOfBirth,
+            gender: payload.gender,
+            smokes: payload.smokes,
+            lastTobaccoUse: payload.lastTobaccoUse,
+            coverageStartDate: payload.coverageStartDate,
+            paymentFrequency: payload.paymentFrequency,
+          })
+        })
+        if (!resp.ok) {
+          console.error('Auto-fetch plans failed:', resp.status, await resp.text())
+          return
+        }
+        const result = await resp.json()
+        const plans = Array.isArray(result?.plans) ? result.plans : []
+        if (plans.length > 0) {
+          setInsurancePlans(plans)
+          setUsingFallbackData(false)
+          // Persist for subsequent visits
+          try {
+            sessionStorage.setItem('insurancePlans', JSON.stringify(plans))
+            sessionStorage.setItem('insuranceFormData', JSON.stringify(payload))
+          } catch {}
+        } else {
+          console.log('Auto-fetch returned no plans; keeping fallback')
+        }
+      } catch (err) {
+        console.error('Error auto-fetching plans:', err)
+      } finally {
+        setIsFetchingPlans(false)
+      }
+    }
+
+    if (shouldAttemptAutoFetch()) {
+      fetchPlans()
+    }
+  }, [user, missingFields, usingFallbackData, isFetchingPlans, hasStoredFormData, formData, isClient])
 
   // Function to update plans with new form data
   const handleUpdateInformation = async () => {
@@ -310,6 +501,99 @@ export default function InsuranceOptionsPage() {
   }
 
   const filteredPlans = getFilteredAndSortedPlans()
+
+  // Mostrar loading mientras verifica autenticación
+  if (authLoading || isCheckingProfile) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-lg text-gray-600">
+              {isCheckingProfile ? 'Checking your profile...' : 'Loading...'}
+            </p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
+  // Si el usuario está autenticado y faltan campos, mostrar alerta
+  if (user && missingFields.length > 0) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 py-12">
+          <div className="container mx-auto px-4 max-w-3xl">
+            <Alert className="border-yellow-400 bg-yellow-50">
+              <AlertCircle className="h-5 w-5 text-yellow-600" />
+              <AlertDescription>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-yellow-900 text-lg mb-2">
+                      Complete Your Profile
+                    </h3>
+                    <p className="text-yellow-800 mb-3">
+                      We need some additional information to show you the best insurance plans tailored to your needs:
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 text-yellow-800 mb-4">
+                      {missingFields.map(field => (
+                        <li key={field}>{field}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <Button 
+                    onClick={() => router.push('/explore?skip-account-question=true')}
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                  >
+                    Complete My Profile
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
+  // Si es invitado y no tenemos datos almacenados para cotizar, pedir completar
+  if (!user && !hasStoredFormData && !loading) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 py-12">
+          <div className="container mx-auto px-4 max-w-3xl">
+            <Alert className="border-yellow-400 bg-yellow-50">
+              <AlertCircle className="h-5 w-5 text-yellow-600" />
+              <AlertDescription>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-yellow-900 text-lg mb-2">
+                      Complete Your Information
+                    </h3>
+                    <p className="text-yellow-800 mb-3">
+                      We need some information to show you accurate plans (ZIP, Date of Birth, Gender).
+                    </p>
+                  </div>
+                  <Button 
+                    onClick={() => router.push('/explore?skip-account-question=true')}
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                  >
+                    Complete My Profile
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
 
   if (loading) {
     return (
