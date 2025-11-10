@@ -227,7 +227,8 @@ create type application_status as enum (
   'approved',
   'rejected',
   'active',
-  'cancelled'
+  'cancelled',
+  'submission_failed'
 );
 
 -- ============================================

@@ -16,18 +16,36 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Parse enrollment data
-    const enrollmentData: EnrollmentRequest = await request.json()
+    // Parse request body (puede incluir estado inicial opcional)
+    const requestBody = await request.json()
+    const enrollmentData: EnrollmentRequest = requestBody.enrollmentData || requestBody
+    const initialStatus = requestBody.status || 'draft'
     
-    console.log('Saving enrollment for user:', user.id)
+    console.log('Saving enrollment for user:', user.id, 'with status:', initialStatus)
 
-    // Remover datos de pago del enrollment_data
+    // Remover TODOS los datos de pago del enrollment_data por seguridad
     const cleanEnrollmentData = { ...enrollmentData }
     if (cleanEnrollmentData.paymentInformation) {
+      // Remover datos sensibles de tarjeta de crédito
       delete cleanEnrollmentData.paymentInformation.creditCardNumber
       delete cleanEnrollmentData.paymentInformation.cvv
+      delete cleanEnrollmentData.paymentInformation.cardToken
+      
+      // Remover datos sensibles de cuenta bancaria
       delete cleanEnrollmentData.paymentInformation.accountNumber
       delete cleanEnrollmentData.paymentInformation.routingNumber
+      
+      // Mantener solo datos no sensibles para referencia
+      cleanEnrollmentData.paymentInformation = {
+        accountType: cleanEnrollmentData.paymentInformation.accountType,
+        accountHolderFirstName: cleanEnrollmentData.paymentInformation.accountHolderFirstName,
+        accountHolderLastName: cleanEnrollmentData.paymentInformation.accountHolderLastName,
+        cardBrand: cleanEnrollmentData.paymentInformation.cardBrand,
+        expirationMonth: cleanEnrollmentData.paymentInformation.expirationMonth,
+        expirationYear: cleanEnrollmentData.paymentInformation.expirationYear,
+        bankName: cleanEnrollmentData.paymentInformation.bankName,
+        accountType: cleanEnrollmentData.paymentInformation.accountType
+      }
     }
 
     // 1. Crear application
@@ -35,7 +53,7 @@ export async function POST(request: NextRequest) {
       .from('applications')
       .insert({
         user_id: user.id,
-        status: 'draft',
+        status: initialStatus,
         carrier_name: enrollmentData.coverages[0]?.carrierName,
         zip_code: enrollmentData.demographics.zipCode,
         email: enrollmentData.demographics.email,

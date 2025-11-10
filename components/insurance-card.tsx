@@ -14,9 +14,12 @@
 import { Shield, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { InsurancePlanModal } from "@/components/insurance-plan-modal"
 import { useCart } from "@/contexts/cart-context"
+import { useCompare } from "@/contexts/compare-context"
 import { useState } from "react"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 
 /**
  * Interface que define la estructura de un plan de seguro
@@ -104,23 +107,59 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
   // Hook del carrito
   const { addItem, isInCart } = useCart()
   
+  // Hook de comparación
+  const { addPlanToCompare, removePlanFromCompare, isInComparison, canAddMore } = useCompare()
+  
   // Verificar si el plan ya está en el carrito
   const inCart = isInCart(plan.id)
+
+  // Verificar si el plan está en comparación
+  const inComparison = isInComparison(plan.id)
 
   // Manejar la selección del plan
   const handleSelectPlan = () => {
     addItem(plan)
   }
 
+  // Manejar el checkbox de comparación
+  const handleCompareToggle = (checked: boolean) => {
+    if (checked) {
+      if (canAddMore) {
+        addPlanToCompare(plan)
+      }
+    } else {
+      removePlanFromCompare(plan.id)
+    }
+  }
+
   return (
     <>
     {/* ===== TARJETA PRINCIPAL ===== */}
-    <div className="border-2 border-primary rounded-3xl p-6 bg-white hover:shadow-lg transition-shadow">
+    <div className="border-2 border-primary rounded-3xl p-6 bg-white hover:shadow-lg transition-shadow relative">
+      
+      {/* ===== CHECKBOX DE COMPARACIÓN ===== */}
+      <div className="absolute bottom-4 right-4 z-20 group">
+        
+        <div className="relative flex items-center gap-2">
+        <span className="text-xs text-gray-600">Add to comparison</span>
+          <Checkbox
+            checked={inComparison}
+            onCheckedChange={handleCompareToggle}
+            disabled={!canAddMore && !inComparison}
+            className="size-6 border-2 border-gray-400 data-[state=checked]:bg-primary data-[state=checked]:border-primary disabled:opacity-40"
+            aria-label="Add to comparison"
+          />
+          
+       
+         
+          
+        </div>
+      </div>
       
       {/* ===== HEADER: Ícono, nombre y precio ===== */}
       {/* Muestra el nombre del plan, badge "All state" (si aplica) y precio mensual */}
       <div className="flex items-start justify-between mb-6">
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 pr-8">
           <div className="w-12 h-12 bg-cyan/10 rounded-lg flex items-center justify-center flex-shrink-0">
             <Shield className="w-6 h-6 text-cyan" />
           </div>

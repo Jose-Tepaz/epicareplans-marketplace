@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import { Suspense } from "react"
 import { CartProvider } from "@/contexts/cart-context"
+import { CompareProvider } from "@/contexts/compare-context"
 import { AuthProvider } from "@/contexts/auth-context"
 import { Toaster } from "sonner"
 import "./globals.css"
@@ -25,11 +26,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} antialiased`}>
         <AuthProvider>
+          <CompareProvider>
           <CartProvider>
             <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
             <Analytics />
             <Toaster position="top-right" richColors closeButton />
           </CartProvider>
+          </CompareProvider>
         </AuthProvider>
       </body>
     </html>

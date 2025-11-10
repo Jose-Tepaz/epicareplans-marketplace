@@ -226,3 +226,122 @@ export async function saveExploreDataToProfile(exploreData: {
   }
 }
 
+export async function updateApplicationWithApiResponse(
+  applicationId: string,
+  apiResponse: any,
+  apiError: any | null,
+  newStatus: 'submitted' | 'pending_approval' | 'approved' | 'rejected' | 'submission_failed'
+) {
+  const supabase = createClient()
+  
+  // Get current application status
+  const { data: currentApp } = await supabase
+    .from('applications')
+    .select('status')
+    .eq('id', applicationId)
+    .single()
+
+  // Update application status
+  const { error } = await supabase
+    .from('applications')
+    .update({
+      status: newStatus,
+      api_response: apiResponse,
+      api_error: apiError,
+      external_reference_id: apiResponse?.referenceId || null,
+    })
+    .eq('id', applicationId)
+
+  if (error) throw error
+
+  // Register status change in history
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  let notes = ''
+  if (newStatus === 'submitted') {
+    notes = 'Enrollment enviado exitosamente a la API de la aseguradora'
+  } else if (newStatus === 'submission_failed') {
+    notes = `Enrollment falló: ${apiError?.message || 'Error desconocido'}`
+  } else if (newStatus === 'pending_approval') {
+    notes = 'Enrollment pendiente de aprobación por la aseguradora'
+  } else if (newStatus === 'approved') {
+    notes = 'Enrollment aprobado por la aseguradora'
+  } else if (newStatus === 'rejected') {
+    notes = `Enrollment rechazado: ${apiError?.message || 'Razón no especificada'}`
+  }
+
+  const { error: historyError } = await supabase
+    .from('application_status_history')
+    .insert({
+      application_id: applicationId,
+      previous_status: currentApp?.status,
+      new_status: newStatus,
+      changed_by: user?.id,
+      notes,
+    })
+
+  if (historyError) {
+    console.warn('⚠️ Error registrando historial de estado:', historyError)
+    // No lanzar error para no interrumpir el flujo principal
+  }
+}
+
+// Función específica para registrar el inicio del enrollment (versión API)
+export async function recordEnrollmentStartAPI(applicationId: string, userId: string) {
+  console.log('🔍 recordEnrollmentStartAPI - Iniciando con applicationId:', applicationId, 'userId:', userId)
+  
+  const response = await fetch('/api/enrollment/record-start', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      applicationId,
+      userId,
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    console.error('❌ recordEnrollmentStartAPI - Error:', error)
+    throw new Error(error.message || 'Failed to record enrollment start')
+  }
+  
+  console.log('✅ recordEnrollmentStartAPI - Historial registrado exitosamente')
+  return await response.json()
+}
+
+// Función específica para registrar el inicio del enrollment (versión cliente)
+export async function recordEnrollmentStart(applicationId: string) {
+  console.log('🔍 recordEnrollmentStart - Iniciando con applicationId:', applicationId)
+  
+  const supabase = createClient()
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  console.log('🔍 recordEnrollmentStart - Usuario:', user?.id)
+  
+  if (!user) {
+    console.error('❌ recordEnrollmentStart - Usuario no autenticado')
+    throw new Error('Usuario no autenticado')
+  }
+  
+  console.log('🔍 recordEnrollmentStart - Insertando en application_status_history...')
+  
+  const { error } = await supabase
+    .from('application_status_history')
+    .insert({
+      application_id: applicationId,
+      previous_status: null, // No hay estado previo para el primer registro
+      new_status: 'draft',
+      changed_by: user.id,
+      notes: 'Enrollment iniciado - datos del formulario completados',
+    })
+
+  if (error) {
+    console.error('❌ recordEnrollmentStart - Error:', error)
+    throw error
+  }
+  
+  console.log('✅ recordEnrollmentStart - Historial registrado exitosamente')
+}
+

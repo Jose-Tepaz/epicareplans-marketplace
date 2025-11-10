@@ -11,6 +11,7 @@ import { ApiWarningNotification } from "@/components/api-warning-notification"
 import { InsuranceEmptyState } from "@/components/insurance-empty-state"
 import { EditInformationModal } from "@/components/edit-information-modal"
 import { FloatingCartButton } from "@/components/floating-cart-button"
+import { FloatingCompareButton } from "@/components/floating-compare-button"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InsurancePlan } from "@/lib/types/insurance"
@@ -702,7 +703,8 @@ export default function InsuranceOptionsPage() {
       <NewsletterSection />
       <Footer />
 
-      {/* Floating Cart Button */}
+      {/* Floating Buttons */}
+      <FloatingCompareButton />
       <FloatingCartButton />
 
       {/* Edit Information Modal Component */}

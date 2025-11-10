@@ -6,48 +6,28 @@
 
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
 import { useCart } from "@/contexts/cart-context"
-import { CheckCircle, Home, FileText } from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
+import { CheckCircle, LayoutDashboard, ShoppingBag } from "lucide-react"
 import Link from "next/link"
-import confetti from "canvas-confetti"
 
 export default function ApplicationSuccessPage() {
   const { clearCart } = useCart()
+  const { user } = useAuth()
+  
+  const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3001'
+
+  
 
   useEffect(() => {
-    // Clear cart on success
+    // Clear cart on success only once
     clearCart()
-
-    // Confetti animation
-    const duration = 3000
-    const end = Date.now() + duration
-
-    const frame = () => {
-      confetti({
-        particleCount: 2,
-        angle: 60,
-        spread: 55,
-        origin: { x: 0 },
-        colors: ['#4ABADB', '#FF7A45', '#10B981']
-      })
-      confetti({
-        particleCount: 2,
-        angle: 120,
-        spread: 55,
-        origin: { x: 1 },
-        colors: ['#4ABADB', '#FF7A45', '#10B981']
-      })
-
-      if (Date.now() < end) {
-        requestAnimationFrame(frame)
-      }
-    }
-    frame()
-  }, [clearCart])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -65,8 +45,11 @@ export default function ApplicationSuccessPage() {
             <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
               Application Submitted Successfully!
             </h1>
-            <p className="text-xl text-gray-600 mb-8">
+            <p className="text-xl text-gray-600 mb-2">
               Thank you for choosing EpiCare. We've received your insurance application.
+            </p>
+            <p className="text-lg text-primary mb-8 font-medium">
+              Visit your dashboard to track your application status and manage your policies.
             </p>
 
             {/* Info Box */}
@@ -90,28 +73,21 @@ export default function ApplicationSuccessPage() {
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/">
-                <Button className="w-full sm:w-auto rounded-full bg-primary hover:bg-primary/90 text-white h-12 px-8 font-semibold">
-                  <Home className="w-4 h-4 mr-2" />
-                  Back to Home
+              <Link href={dashboardUrl}>
+                <Button className="w-full sm:w-auto rounded-full bg-primary hover:bg-primary/90 text-white h-12 px-8 font-semibold flex items-center justify-center">
+                  <LayoutDashboard className="w-5 h-5 mr-2" />
+                  Go to Dashboard
                 </Button>
               </Link>
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto rounded-full border-2 border-gray-300 h-12 px-8 font-semibold"
-                onClick={() => window.print()}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Print Confirmation
-              </Button>
-            </div>
-
-            {/* Reference Number */}
-            <div className="mt-8 pt-8 border-t">
-              <p className="text-sm text-gray-500 mb-1">Reference Number</p>
-              <p className="text-2xl font-bold text-gray-900 font-mono">
-                EC-{Date.now().toString().slice(-8)}
-              </p>
+              <Link href="/insurance-options">
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto rounded-full border-2 border-primary text-primary hover:bg-primary hover:text-white h-12 px-8 font-semibold flex items-center justify-center"
+                >
+                  <ShoppingBag className="w-5 h-5 mr-2" />
+                  Continue Shopping
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
