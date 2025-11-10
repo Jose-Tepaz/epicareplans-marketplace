@@ -7,7 +7,7 @@ Se ha implementado exitosamente la integración con el endpoint **ApplicationBun
 ## ✅ Funcionalidades Implementadas
 
 ### 1. **Servicio ApplicationBundle API**
-- **Archivo:** `lib/api/application-bundle.ts`
+- **Archivo:** `lib/api/carriers/allstate/application-bundle.ts`
 - **Funcionalidad:** Cliente para interactuar con el endpoint ApplicationBundle
 - **Características:**
   - Mapeo automático de datos del Quoting API

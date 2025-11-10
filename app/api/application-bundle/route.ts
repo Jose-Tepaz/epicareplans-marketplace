@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { applicationBundleAPI } from '@/lib/api/application-bundle';
+import { allstate } from '@/lib/api/carriers';
 import type { ApplicationBundleRequest } from '@/lib/types/application-bundle';
 
 /**
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
 
     // Llamar al ApplicationBundle API
     console.log('Calling applicationBundleAPI.getApplicationBundle...');
-    const applicationBundle = await applicationBundleAPI.getApplicationBundle(
+    const applicationBundle = await allstate.applicationBundleAPI.getApplicationBundle(
       requestData.selectedPlans,
       requestData.state,
       requestData.effectiveDate,
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
     console.log('ApplicationBundle API successful:', applicationBundle);
 
     // Crear estado inicial del formulario dinámico
-    const dynamicFormState = applicationBundleAPI.createDynamicFormState(applicationBundle.applications);
+    const dynamicFormState = allstate.applicationBundleAPI.createDynamicFormState(applicationBundle.applications);
 
     // Return success response
     return NextResponse.json({

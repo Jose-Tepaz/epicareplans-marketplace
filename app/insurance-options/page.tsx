@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { NewsletterSection } from "@/components/newsletter-section"
@@ -29,9 +29,9 @@ export default function InsuranceOptionsPage() {
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [usingFallbackData, setUsingFallbackData] = useState(false)
   const [isFetchingPlans, setIsFetchingPlans] = useState(false)
   const [hasStoredFormData, setHasStoredFormData] = useState(false)
+  const lastAutoFetchPayloadRef = useRef<string | null>(null)
 
   // Filter states
   const [selectedPlanType, setSelectedPlanType] = useState<string>("all")
@@ -58,81 +58,25 @@ export default function InsuranceOptionsPage() {
     paymentFrequency: ""
   })
 
-  // Fallback static data
-  const fallbackPlans: InsurancePlan[] = [
-    {
-      id: "1",
-      name: "Accident Fixed-Benefit",
-      price: 25.15,
-      coverage: "$25,000/$50,000 Benefit",
-      productType: "NHICSupplemental",
-      benefits: ["One Time Enrollment Fee", "LIFE Association Membership"],
-      allState: true,
-      planType: "NICAFB",
-      benefitDescription: "$25,000/$50,000 Benefit",
-      brochureUrl: "https://example.com/brochures/accident-fixed-benefit.pdf"
-    },
-    {
-      id: "2", 
-      name: "Life Only - Individual",
-      price: 35.50,
-      coverage: "$25,000/$50,000 Benefit",
-      productType: "NHICSupplemental",
-      benefits: ["One Time Enrollment Fee", "LIFE Association Membership"],
-      allState: true,
-      planType: "Life",
-      benefitDescription: "$25,000/$50,000 Benefit",
-      brochureUrl: "https://example.com/brochures/life-only-individual.pdf"
-    },
-    {
-      id: "3",
-      name: "Dental Basic Plan",
-      price: 18.99,
-      coverage: "$1,000 Annual Maximum",
-      productType: "NHICSupplemental",
-      benefits: ["Preventive Care", "Basic Procedures", "Network Discounts"],
-      allState: true,
-      planType: "Dental",
-      benefitDescription: "$1,000 Annual Maximum",
-      brochureUrl: "https://example.com/brochures/dental-basic.pdf"
-    },
-    {
-      id: "4",
-      name: "Vision Essential",
-      price: 12.99,
-      coverage: "$150 Annual Eye Exam",
-      productType: "NHICSupplemental",
-      benefits: ["Eye Exams", "Glasses Discount", "Contact Lens Allowance"],
-      allState: false,
-      planType: "Vision",
-      benefitDescription: "$150 Annual Eye Exam",
-      brochureUrl: "https://example.com/brochures/vision-essential.pdf"
-    },
-    {
-      id: "5",
-      name: "Accident Premium Plan",
-      price: 45.00,
-      coverage: "$50,000/$100,000 Benefit",
-      productType: "NHICSupplemental",
-      benefits: ["Emergency Room Coverage", "Ambulance Services", "Hospital Stays"],
-      allState: true,
-      planType: "NICAFB",
-      benefitDescription: "$50,000/$100,000 Benefit",
-      brochureUrl: "https://example.com/brochures/accident-premium.pdf"
-    },
-    {
-      id: "6",
-      name: "Life Family Coverage",
-      price: 55.00,
-      coverage: "$100,000/$200,000 Benefit",
-      productType: "NHICSupplemental",
-      benefits: ["Family Coverage", "No Medical Exam", "Guaranteed Issue"],
-      allState: true,
-      planType: "Life",
-      benefitDescription: "$100,000/$200,000 Benefit",
-      brochureUrl: "https://example.com/brochures/life-family.pdf"
-    },
-  ]
+  const normalizeInsurancePlan = (plan: any): InsurancePlan => {
+    return {
+      id: String(plan?.id ?? ""),
+      name: plan?.name ?? "Unknown Plan",
+      price: typeof plan?.price === "number" ? plan.price : Number(plan?.price ?? 0),
+      coverage: plan?.coverage ?? "",
+      productType: plan?.productType ?? "",
+      benefits: Array.isArray(plan?.benefits) ? plan.benefits : [],
+      allState: Boolean(plan?.allState),
+      planType: plan?.planType ?? "",
+      benefitDescription: plan?.benefitDescription ?? "",
+      brochureUrl: plan?.brochureUrl ?? plan?.pathToBrochure ?? undefined,
+      carrierName: plan?.carrierName ?? undefined,
+      carrierSlug: plan?.carrierSlug ?? (plan?.allState ? "allstate" : undefined),
+      productCode: plan?.productCode ?? undefined,
+      planKey: plan?.planKey ?? undefined,
+      metadata: plan?.metadata ?? undefined,
+    }
+  }
 
   // Verificar si el usuario autenticado tiene campos faltantes en su perfil
   useEffect(() => {
@@ -173,34 +117,34 @@ export default function InsuranceOptionsPage() {
     // Only run on client side to avoid hydration issues
     if (!isClient) return;
 
+    console.log('🔄 [INIT] Loading stored plans from sessionStorage')
+    
     // Try to get plans from sessionStorage first
     const storedPlans = sessionStorage.getItem('insurancePlans')
     
     if (storedPlans) {
       try {
         const plans = JSON.parse(storedPlans)
-        console.log('Stored plans from sessionStorage:', plans)
+        console.log('💾 [INIT] Found stored plans:', plans.length, 'plans')
         
         // If plans array is empty, use fallback data
-        if (Array.isArray(plans) && plans.length === 0) {
-          console.log('No plans found, using fallback data')
-          setInsurancePlans(fallbackPlans)
-          setUsingFallbackData(true)
+        if (Array.isArray(plans) && plans.length > 0) {
+          const normalized = plans.map(normalizeInsurancePlan)
+          setInsurancePlans(normalized)
+          console.log('✅ [INIT] Loaded', normalized.length, 'plans from storage')
         } else {
-          setInsurancePlans(plans)
-          setUsingFallbackData(false)
+          console.log('⚠️  [INIT] Stored plans array is empty')
         }
         setLoading(false)
         return
       } catch (error) {
-        console.error('Error parsing stored plans:', error)
+        console.error('❌ [INIT] Error parsing stored plans:', error)
       }
     }
 
     // If no stored plans, use fallback data
-    console.log('No stored plans found, using fallback data')
-    setInsurancePlans(fallbackPlans)
-    setUsingFallbackData(true)
+    console.log('⚠️  [INIT] No stored plans found in sessionStorage')
+    setInsurancePlans([])
     setLoading(false)
   }, [isClient])
 
@@ -273,11 +217,14 @@ export default function InsuranceOptionsPage() {
     }
   }, [user, isClient])
 
-  // Try to auto-fetch plans using stored/profile data when fallback is active
+  // Try to auto-fetch plans using stored/profile data when the list is empty
   useEffect(() => {
+    // Early exit if not on client
+    if (!isClient) return
+    
     const shouldAttemptAutoFetch = () => {
-      // If we already have non-fallback plans, skip
-      if (!usingFallbackData) return false
+      // If we already have plans, skip
+      if (insurancePlans.length > 0) return false
       // Avoid parallel fetches
       if (isFetchingPlans) return false
       // Require either: user with no missing fields, or stored form data for guests
@@ -317,12 +264,36 @@ export default function InsuranceOptionsPage() {
       try {
         setIsFetchingPlans(true)
         const payload = await buildPayload()
+        
+        console.log('🔍 [AUTO-FETCH] Starting with payload:', payload)
+        
         // Check essential fields
         if (!payload.zipCode || !payload.dateOfBirth || !payload.gender) {
-          console.log('Missing essential fields to auto-fetch plans, skipping')
+          console.log('❌ [AUTO-FETCH] Missing essential fields:', {
+            zipCode: payload.zipCode || 'MISSING',
+            dateOfBirth: payload.dateOfBirth || 'MISSING',
+            gender: payload.gender || 'MISSING'
+          })
           return
         }
-        console.log('Auto-fetching plans with payload:', payload)
+
+        const payloadKey = JSON.stringify({
+          zipCode: payload.zipCode,
+          dateOfBirth: payload.dateOfBirth,
+          gender: payload.gender,
+          smokes: payload.smokes,
+          coverageStartDate: payload.coverageStartDate,
+          paymentFrequency: payload.paymentFrequency,
+        })
+
+        if (lastAutoFetchPayloadRef.current === payloadKey) {
+          console.log('⏭️  [AUTO-FETCH] Skipping - same payload already attempted')
+          return
+        }
+
+        lastAutoFetchPayloadRef.current = payloadKey
+
+        console.log('📤 [AUTO-FETCH] Sending request to /api/insurance/quote')
         const resp = await fetch('/api/insurance/quote', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -336,26 +307,54 @@ export default function InsuranceOptionsPage() {
             paymentFrequency: payload.paymentFrequency,
           })
         })
+        
+        console.log('📥 [AUTO-FETCH] Response status:', resp.status, resp.statusText)
+        
         if (!resp.ok) {
-          console.error('Auto-fetch plans failed:', resp.status, await resp.text())
+          const raw = await resp.text()
+          console.error('❌ [AUTO-FETCH] API error response:', raw)
+          let message = `Failed to fetch plans (${resp.status})`
+          try {
+            const parsed = JSON.parse(raw)
+            message = parsed?.error || parsed?.message || message
+          } catch {
+            if (raw) {
+              message = `${message}: ${raw}`
+            }
+          }
+          setError(message)
           return
         }
+        
         const result = await resp.json()
+        console.log('📦 [AUTO-FETCH] API response:', result)
+        
         const plans = Array.isArray(result?.plans) ? result.plans : []
+        console.log(`📊 [AUTO-FETCH] Received ${plans.length} plans`)
+        
         if (plans.length > 0) {
-          setInsurancePlans(plans)
-          setUsingFallbackData(false)
+          const normalizedPlans = plans.map(normalizeInsurancePlan)
+          console.log('✅ [AUTO-FETCH] Plans normalized and setting state')
+          setInsurancePlans(normalizedPlans)
+          setError(null)
           // Persist for subsequent visits
           try {
-            sessionStorage.setItem('insurancePlans', JSON.stringify(plans))
+            sessionStorage.setItem('insurancePlans', JSON.stringify(normalizedPlans))
             sessionStorage.setItem('insuranceFormData', JSON.stringify(payload))
-          } catch {}
+            console.log('💾 [AUTO-FETCH] Saved to sessionStorage')
+          } catch (storageErr) {
+            console.warn('⚠️  [AUTO-FETCH] Failed to save to sessionStorage:', storageErr)
+          }
         } else {
-          console.log('Auto-fetch returned no plans; keeping fallback')
+          console.warn('⚠️  [AUTO-FETCH] No plans returned from API')
+          setInsurancePlans([])
+          setError('No plans were returned for the provided information. Please review your details and try again.')
         }
       } catch (err) {
-        console.error('Error auto-fetching plans:', err)
+        console.error('❌ [AUTO-FETCH] Exception:', err)
+        setError(err instanceof Error ? err.message : 'There was a problem fetching plans. Please try again later.')
       } finally {
+        console.log('🏁 [AUTO-FETCH] Complete')
         setIsFetchingPlans(false)
       }
     }
@@ -363,7 +362,8 @@ export default function InsuranceOptionsPage() {
     if (shouldAttemptAutoFetch()) {
       fetchPlans()
     }
-  }, [user, missingFields, usingFallbackData, isFetchingPlans, hasStoredFormData, formData, isClient])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, missingFields.length, isFetchingPlans, hasStoredFormData, isClient, insurancePlans.length])
 
   // Function to update plans with new form data
   const handleUpdateInformation = async () => {
@@ -381,17 +381,36 @@ export default function InsuranceOptionsPage() {
     console.log('  - coverageStartDate:', formData.coverageStartDate || 'MISSING')
     console.log('  - paymentFrequency:', formData.paymentFrequency || 'MISSING')
 
+    const payloadForRequest = {
+      ...formData,
+      coverageStartDate:
+        formData.coverageStartDate ||
+        new Date(Date.now() + 86400000).toISOString().split('T')[0],
+      paymentFrequency: formData.paymentFrequency || 'monthly',
+    }
+
     try {
+      lastAutoFetchPayloadRef.current = null
+
       const response = await fetch('/api/insurance/quote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payloadForRequest)
       })
 
       if (!response.ok) {
         const errorText = await response.text()
         console.error('API Response Error:', response.status, errorText)
-        throw new Error(`Insurance API failed: ${response.status}`)
+        let message = `Insurance API failed: ${response.status}`
+        try {
+          const parsed = JSON.parse(errorText)
+          message = parsed?.error || parsed?.message || message
+        } catch {
+          if (errorText) {
+            message = `${message} - ${errorText}`
+          }
+        }
+        throw new Error(message)
       }
       
       const result = await response.json()
@@ -399,18 +418,19 @@ export default function InsuranceOptionsPage() {
       
       // Update sessionStorage
       if (result.plans && result.plans.length > 0) {
-        sessionStorage.setItem('insurancePlans', JSON.stringify(result.plans))
-        sessionStorage.setItem('insuranceFormData', JSON.stringify(formData))
+        const normalizedPlans = result.plans.map(normalizeInsurancePlan)
+        sessionStorage.setItem('insurancePlans', JSON.stringify(normalizedPlans))
+        sessionStorage.setItem('insuranceFormData', JSON.stringify(payloadForRequest))
         
         // Update state
-        setInsurancePlans(result.plans)
-        setUsingFallbackData(false)
+        setFormData(payloadForRequest)
+        setInsurancePlans(normalizedPlans)
+        setError(null)
       } else {
-        // If no plans returned, use fallback data
-        console.warn('No plans returned from API, using fallback data')
-        sessionStorage.setItem('insuranceFormData', JSON.stringify(formData))
-        setInsurancePlans(fallbackPlans)
-        setUsingFallbackData(true)
+        console.warn('No plans returned from API')
+        sessionStorage.setItem('insuranceFormData', JSON.stringify(payloadForRequest))
+        setInsurancePlans([])
+        setError('No plans were returned for the provided information. Please review your details and try again.')
       }
       
       setIsEditModalOpen(false)
@@ -422,11 +442,11 @@ export default function InsuranceOptionsPage() {
     } catch (error) {
       console.error('Error updating insurance quotes:', error)
       
-      // Even if API fails, save the form data and use fallback plans
-      console.log('Using fallback plans due to API error')
-      sessionStorage.setItem('insuranceFormData', JSON.stringify(formData))
-      setInsurancePlans(fallbackPlans)
-      setUsingFallbackData(true)
+      sessionStorage.setItem('insuranceFormData', JSON.stringify(payloadForRequest))
+      if (insurancePlans.length === 0) {
+        setInsurancePlans([])
+      }
+      setError(error instanceof Error ? error.message : 'There was a problem fetching plans. Please try again later.')
       setIsEditModalOpen(false)
       
       // Show warning notification
@@ -502,6 +522,18 @@ export default function InsuranceOptionsPage() {
   }
 
   const filteredPlans = getFilteredAndSortedPlans()
+  
+  // Debug log for rendering
+  console.log('🎨 [RENDER] State:', {
+    insurancePlans: insurancePlans.length,
+    filteredPlans: filteredPlans.length,
+    loading,
+    error,
+    isFetchingPlans,
+    hasStoredFormData,
+    user: user ? 'authenticated' : 'guest',
+    missingFields: missingFields.length
+  })
 
   // Mostrar loading mientras verifica autenticación
   if (authLoading || isCheckingProfile) {
@@ -607,17 +639,6 @@ export default function InsuranceOptionsPage() {
     )
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg text-red-600 mb-4">Error loading insurance options</p>
-          <p className="text-gray-600">{error}</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -643,20 +664,37 @@ export default function InsuranceOptionsPage() {
             {/* User Information Summary */}
             <UserInfoSummary formData={formData} />
             
-            {/* Fallback Data Notice */}
-            {usingFallbackData && (
-              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-blue-800 text-sm">
-                  <strong>Note:</strong> No specific plans were found for your criteria. Showing sample plans for demonstration purposes.
-                </p>
-              </div>
-            )}
-            
             {/* API Warning Notification */}
             <ApiWarningNotification 
               show={showApiWarning} 
               onClose={() => setShowApiWarning(false)} 
             />
+            {error && (
+              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="text-red-700 text-sm mb-2">
+                      <strong>Error:</strong> {error}
+                    </p>
+                    <p className="text-red-600 text-xs">
+                      Intenta con datos diferentes o limpia el caché y recarga la página.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      sessionStorage.clear()
+                      localStorage.clear()
+                      window.location.reload()
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="ml-4 text-red-600 border-red-300 hover:bg-red-50"
+                  >
+                    Limpiar y Recargar
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Main content with sidebar */}

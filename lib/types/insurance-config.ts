@@ -128,27 +128,3 @@ export interface ValidationError {
   created_at: string
 }
 
-export interface AllstateApiResponse {
-  links?: Record<string, { rel: string; href: string; method: string }>
-  memberId?: string
-  submissionResults?: Array<{
-    planType: number
-    submissionReceived: boolean
-    submissionErrors: string[]
-    policyNo: string
-    totalRate: number
-    effectiveDate: string
-    applicationID: number
-    partnerApplicationId: number
-  }>
-  validationErrors?: Array<{
-    errorCode: string
-    errorDetail: string
-  }>
-  memberPortalUrl?: string
-  pendingAttestationCeremonies?: Array<{
-    attestationCeremonyToken: string
-    signee: string
-  }>
-  attestationStatus?: string
-}

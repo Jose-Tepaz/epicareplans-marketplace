@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { applicationBundleAPI } from '@/lib/api/application-bundle';
-
 /**
  * POST /api/debug-application-bundle
  * 

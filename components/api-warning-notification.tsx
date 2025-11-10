@@ -26,10 +26,9 @@ export function ApiWarningNotification({ show, onClose }: ApiWarningNotification
       <div className="flex items-start gap-3">
         <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
         <div className="flex-1">
-          <p className="text-orange-900 font-semibold mb-1">Information Updated Successfully</p>
+          <p className="text-orange-900 font-semibold mb-1">We saved your information</p>
           <p className="text-orange-800 text-sm">
-            Your information has been saved. However, we couldn't fetch real-time insurance plans at this moment. 
-            Showing sample plans for demonstration. Your actual quotes will be calculated when you proceed.
+            We couldn’t fetch live insurance plans right now. Please try again later or adjust your details to refresh the results.
           </p>
         </div>
         <button

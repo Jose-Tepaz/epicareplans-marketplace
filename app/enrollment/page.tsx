@@ -10,7 +10,8 @@ import { EnrollmentLayout } from "@/components/enrollment-layout"
 import { EnrollmentErrorNotification } from "@/components/enrollment-error-notification"
 import { updateUserProfile, updateApplicationWithApiResponse, recordEnrollmentStartAPI } from "@/lib/api/enrollment-db"
 import { splitPlansByCompany, evaluateMultiCarrierResults, getMultiCarrierMessage } from "@/lib/api/enrollment-split"
-import { getPaymentConfig, savePaymentTransaction, saveAllstateApiResponse } from "@/lib/api/insurance-config"
+import { getPaymentConfig, savePaymentTransaction } from "@/lib/api/insurance-config"
+import { saveAllstateApiResponse } from "@/lib/api/carriers/allstate"
 import { createClient } from "@/lib/supabase/client"
 
 const TOTAL_STEPS = 9
