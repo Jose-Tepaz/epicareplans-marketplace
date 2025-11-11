@@ -96,9 +96,10 @@ export interface DynamicQuestionResponse {
 // Estado del formulario dinámico
 export interface DynamicFormState {
   questions: EligibilityQuestion[]
+  questionSections?: any[]
   responses: DynamicQuestionResponse[]
   hasKnockoutAnswers: boolean
-  knockoutErrors: string[]
+  knockoutAnswers: number[]
 }
 
 // Tipos de validación

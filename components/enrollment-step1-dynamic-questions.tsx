@@ -220,7 +220,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
       
       if (result.success && result.data?.dynamicFormState) {
         const dynamicFormState: DynamicFormState = result.data.dynamicFormState
-        setDynamicQuestions(dynamicFormState.questions)
+        setDynamicQuestions(dynamicFormState.questions || [])
         // ocultar cualquier UI de error de fecha si cargó correctamente
         setDateError(null)
         setShowDateFix(false)
@@ -232,9 +232,10 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
         
         setHasLoaded(true)
         
-        if (dynamicFormState.questions.length > 0) {
+        const questionsCount = dynamicFormState.questions?.length || 0
+        if (questionsCount > 0) {
           toast.success('Preguntas de elegibilidad cargadas', {
-            description: `${dynamicFormState.questions.length} preguntas encontradas`
+            description: `${questionsCount} preguntas encontradas`
           })
         } else {
           toast.info('No se encontraron preguntas específicas', {
@@ -452,7 +453,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
     )
   }
 
-  if (!hasLoaded || dynamicQuestions.length === 0) {
+  if (!hasLoaded || !dynamicQuestions || dynamicQuestions.length === 0) {
     return (
       <div className="space-y-6">
         <Alert className="border-blue-200 bg-blue-50">
@@ -585,7 +586,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
       />
 
       {/* Mostrar advertencia si hay respuestas knockout */}
-      {validation.knockoutAnswers.length > 0 && (
+      {validation.knockoutAnswers && validation.knockoutAnswers.length > 0 && (
         <Alert className="border-red-200 bg-red-50">
           <AlertTriangle className="h-4 w-4 text-red-500" />
           <AlertDescription className="text-red-700">

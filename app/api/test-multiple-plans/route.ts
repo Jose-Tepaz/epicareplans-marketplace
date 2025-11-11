@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { applicationBundleAPI } from '@/lib/api/application-bundle';
+import { applicationBundleAPI } from '@/lib/api/carriers/allstate';
 
 /**
  * POST /api/test-multiple-plans

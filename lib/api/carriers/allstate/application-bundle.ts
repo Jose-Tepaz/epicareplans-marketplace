@@ -420,7 +420,7 @@ export class ApplicationBundleAPI {
       isValid: errors.length === 0,
       errors: shouldShowError ? errors : [],
       hasKnockoutAnswers: knockoutAnswers.length > 0,
-      knockoutAnswerIds: knockoutAnswers,
+      knockoutAnswers,
     }
   }
 
@@ -496,15 +496,33 @@ export class ApplicationBundleAPI {
     }
 
     const primaryApplication = applications[0]
+    
+    // Combinar todas las preguntas de elegibilidad de todas las secciones
+    const allQuestions: EligibilityQuestion[] = []
     const sections = primaryApplication.questionSections || []
+    
+    sections.forEach((section: any) => {
+      if (section.questions && Array.isArray(section.questions)) {
+        allQuestions.push(...section.questions)
+      }
+    })
+
+    console.log('📋 createDynamicFormState:', {
+      applicationsCount: applications.length,
+      sectionsCount: sections.length,
+      totalQuestions: allQuestions.length,
+      sections: sections.map((s: any) => ({
+        sectionName: s.sectionName,
+        questionsCount: s.questions?.length || 0
+      }))
+    })
 
     return {
-      applications,
+      questions: allQuestions,
       questionSections: sections,
-      eligibilityQuestions: primaryApplication.eligibilityQuestions || [],
-      authorizationQuestions: primaryApplication.authorizationQuestions || [],
-      formVersion: primaryApplication.formVersion,
-      formNumber: primaryApplication.formNumber,
+      responses: [],
+      hasKnockoutAnswers: false,
+      knockoutAnswers: []
     }
   }
 

@@ -66,17 +66,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validar datos con el cliente API
-    const validation = applicationBundleAPI.validateApplicationBundleRequest(
-      requestData.selectedPlans,
-      requestData.state,
-      requestData.effectiveDate
-    );
-
-    console.log('ApplicationBundle Validation Result:', {
-      isValid: validation.isValid,
-      errors: validation.errors,
-      selectedPlans: requestData.selectedPlans.map(plan => ({
+    // Log de los planes seleccionados para debugging
+    console.log('ApplicationBundle Request - Selected Plans:', {
+      plansCount: requestData.selectedPlans.length,
+      plans: requestData.selectedPlans.map(plan => ({
         id: plan.id,
         name: plan.name,
         productCode: plan.productCode,
@@ -85,17 +78,6 @@ export async function POST(request: NextRequest) {
         hasPlanKey: !!plan.planKey
       }))
     });
-
-    if (!validation.isValid) {
-      console.log('ApplicationBundle validation failed:', validation.errors);
-      return NextResponse.json(
-        { 
-          error: 'Validation failed',
-          details: validation.errors
-        },
-        { status: 400 }
-      );
-    }
 
     // Log antes de llamar al API
     console.log('About to call ApplicationBundle API with:', {

@@ -16,7 +16,7 @@ import type {
   QuestionValidation,
   DynamicFormState 
 } from "@/lib/types/application-bundle"
-import { applicationBundleAPI } from "@/lib/api/application-bundle"
+import { applicationBundleAPI } from "@/lib/api/carriers/allstate"
 
 interface DynamicQuestionsFormProps {
   questions: EligibilityQuestion[]
@@ -113,8 +113,36 @@ export function DynamicQuestionsForm({
   // Validar respuestas cuando cambien
   useEffect(() => {
     const visibleQuestionIds = visibleQuestions.map(q => q.questionId)
-    const newValidation = applicationBundleAPI.validateQuestionResponses(questions, responses, visibleQuestionIds, hasUserInteracted, questionIdsWithAttempts)
-    setValidation(newValidation)
+    const newValidation = applicationBundleAPI.validateQuestionResponses(
+      questions,
+      responses,
+      visibleQuestionIds,
+      hasUserInteracted,
+      questionIdsWithAttempts
+    )
+
+    // Usar una función de actualización que recibe el estado actual
+    setValidation(prevValidation => {
+      const validationErrorsEqual =
+        prevValidation.errors.length === newValidation.errors.length &&
+        prevValidation.errors.every((error, index) => error === newValidation.errors[index])
+
+      const validationKnockoutsEqual =
+        (prevValidation.knockoutAnswers?.length || 0) === (newValidation.knockoutAnswers?.length || 0) &&
+        (prevValidation.knockoutAnswers || []).every(
+          (answer, index) => answer === (newValidation.knockoutAnswers || [])[index]
+        )
+
+      if (
+        prevValidation.isValid !== newValidation.isValid ||
+        !validationErrorsEqual ||
+        !validationKnockoutsEqual
+      ) {
+        return newValidation
+      }
+      
+      return prevValidation
+    })
   }, [responses, questions, visibleQuestions, hasUserInteracted, questionIdsWithAttempts])
   
   // Memoizar las funciones de callback para evitar bucles infinitos
@@ -137,12 +165,14 @@ export function DynamicQuestionsForm({
   useEffect(() => {
     if (!memoizedOnKnockoutDetected) return
     
-    const currentKnockoutAnswers = validation.knockoutAnswers
+    const currentKnockoutAnswers = validation.knockoutAnswers ?? []
     const hasKnockout = currentKnockoutAnswers.length > 0
     
     // Solo notificar si hay knockouts y no los hemos notificado antes
-    const knockoutKey = currentKnockoutAnswers.sort().join(',')
-    const lastKnockoutKey = lastKnockoutNotification.current?.knockoutAnswers.sort().join(',') || ''
+    const knockoutKey = [...currentKnockoutAnswers].sort().join(',')
+    const lastKnockoutKey = lastKnockoutNotification.current?.knockoutAnswers
+      ? [...lastKnockoutNotification.current.knockoutAnswers].sort().join(',')
+      : ''
     
     if (hasKnockout && knockoutKey !== lastKnockoutKey) {
       console.log('Nuevos knockouts detectados:', currentKnockoutAnswers)
@@ -154,7 +184,7 @@ export function DynamicQuestionsForm({
       }
       
       // Notificar solo una vez
-      memoizedOnKnockoutDetected(hasKnockout, validation.errors)
+      memoizedOnKnockoutDetected(hasKnockout, validation.errors ?? [])
     }
   }, [validation.knockoutAnswers, validation.errors, memoizedOnKnockoutDetected])
 
@@ -219,8 +249,8 @@ export function DynamicQuestionsForm({
 
   const renderQuestion = (question: EligibilityQuestion) => {
     const currentResponse = responses.find(r => r.questionId === question.questionId)
-    const hasError = validation.errors.some(error => error.includes(`Question ${question.questionId}`))
-    const isKnockout = validation.knockoutAnswers.includes(question.questionId)
+    const hasError = validation.errors?.some(error => error.includes(`Question ${question.questionId}`)) || false
+    const isKnockout = validation.knockoutAnswers?.includes(question.questionId) || false
 
     return (
       <Card key={question.questionId} className={`mb-6 ${hasError ? 'border-red-300' : ''} ${isKnockout ? 'border-orange-300 bg-orange-50' : ''}`}>
@@ -240,7 +270,7 @@ export function DynamicQuestionsForm({
             <Alert className="mb-4 border-red-200 bg-red-50">
               <AlertTriangle className="h-4 w-4 text-red-500" />
               <AlertDescription className="text-red-700">
-                {validation.errors.find(error => error.includes(`Question ${question.questionId}`))}
+                {validation.errors?.find(error => error.includes(`Question ${question.questionId}`))}
               </AlertDescription>
             </Alert>
           )}
@@ -407,7 +437,7 @@ export function DynamicQuestionsForm({
       </div>
 
       {/* Mostrar errores generales */}
-      {validation.errors.length > 0 && (
+      {validation.errors && validation.errors.length > 0 && (
         <Alert className="border-red-200 bg-red-50">
           <AlertTriangle className="h-4 w-4 text-red-500" />
           <AlertDescription>
