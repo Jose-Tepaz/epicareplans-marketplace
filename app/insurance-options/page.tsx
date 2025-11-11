@@ -36,7 +36,12 @@ export default function InsuranceOptionsPage() {
   // Filter states
   const [selectedPlanType, setSelectedPlanType] = useState<string>("all")
   const [selectedProductType, setSelectedProductType] = useState<string>("all")
+  const [selectedCarrier, setSelectedCarrier] = useState<string>("all")
+  const [selectedMLProduct, setSelectedMLProduct] = useState<string>("all")
+  const [manhattanLifeAgentProducts, setManhattanLifeAgentProducts] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<string>("default")
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const PAGE_SIZE = 6
 
   // Edit modal states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -67,6 +72,7 @@ export default function InsuranceOptionsPage() {
       productType: plan?.productType ?? "",
       benefits: Array.isArray(plan?.benefits) ? plan.benefits : [],
       allState: Boolean(plan?.allState),
+      manhattanLife: Boolean(plan?.manhattanLife),
       planType: plan?.planType ?? "",
       benefitDescription: plan?.benefitDescription ?? "",
       brochureUrl: plan?.brochureUrl ?? plan?.pathToBrochure ?? undefined,
@@ -77,6 +83,23 @@ export default function InsuranceOptionsPage() {
       metadata: plan?.metadata ?? undefined,
     }
   }
+
+  // Asegurar coherencia entre filtros de carrier y productos Manhattan Life
+  useEffect(() => {
+    if (selectedMLProduct !== "all" && selectedCarrier !== "manhattan-life") {
+      setSelectedCarrier("manhattan-life")
+    }
+  }, [selectedMLProduct, selectedCarrier])
+
+  useEffect(() => {
+    if (selectedCarrier !== "manhattan-life" && selectedMLProduct !== "all") {
+      setSelectedMLProduct("all")
+    }
+  }, [selectedCarrier, selectedMLProduct])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedPlanType, selectedProductType, selectedCarrier, selectedMLProduct, sortBy])
 
   // Verificar si el usuario autenticado tiene campos faltantes en su perfil
   useEffect(() => {
@@ -121,6 +144,7 @@ export default function InsuranceOptionsPage() {
     
     // Try to get plans from sessionStorage first
     const storedPlans = sessionStorage.getItem('insurancePlans')
+    const storedAgentProducts = sessionStorage.getItem('manhattanLifeAgentProducts')
     
     if (storedPlans) {
       try {
@@ -131,9 +155,25 @@ export default function InsuranceOptionsPage() {
         if (Array.isArray(plans) && plans.length > 0) {
           const normalized = plans.map(normalizeInsurancePlan)
           setInsurancePlans(normalized)
+          setCurrentPage(1)
           console.log('✅ [INIT] Loaded', normalized.length, 'plans from storage')
         } else {
           console.log('⚠️  [INIT] Stored plans array is empty')
+        }
+
+        if (storedAgentProducts) {
+          try {
+            const parsedProducts = JSON.parse(storedAgentProducts)
+            if (Array.isArray(parsedProducts)) {
+              setManhattanLifeAgentProducts(parsedProducts)
+            } else {
+              setManhattanLifeAgentProducts([])
+            }
+          } catch {
+            setManhattanLifeAgentProducts([])
+          }
+        } else {
+          setManhattanLifeAgentProducts([])
         }
         setLoading(false)
         return
@@ -336,11 +376,19 @@ export default function InsuranceOptionsPage() {
           const normalizedPlans = plans.map(normalizeInsurancePlan)
           console.log('✅ [AUTO-FETCH] Plans normalized and setting state')
           setInsurancePlans(normalizedPlans)
+          setCurrentPage(1)
+
+          const mlProducts = Array.isArray(result?.carriers?.manhattanLife?.products)
+            ? result.carriers.manhattanLife.products.filter((p: any) => typeof p === 'string' && p.trim().length > 0)
+            : []
+          setManhattanLifeAgentProducts(mlProducts)
+
           setError(null)
           // Persist for subsequent visits
           try {
             sessionStorage.setItem('insurancePlans', JSON.stringify(normalizedPlans))
             sessionStorage.setItem('insuranceFormData', JSON.stringify(payload))
+            sessionStorage.setItem('manhattanLifeAgentProducts', JSON.stringify(mlProducts))
             console.log('💾 [AUTO-FETCH] Saved to sessionStorage')
           } catch (storageErr) {
             console.warn('⚠️  [AUTO-FETCH] Failed to save to sessionStorage:', storageErr)
@@ -348,6 +396,10 @@ export default function InsuranceOptionsPage() {
         } else {
           console.warn('⚠️  [AUTO-FETCH] No plans returned from API')
           setInsurancePlans([])
+          setCurrentPage(1)
+          setCurrentPage(1)
+          setManhattanLifeAgentProducts([])
+          sessionStorage.removeItem('manhattanLifeAgentProducts')
           setError('No plans were returned for the provided information. Please review your details and try again.')
         }
       } catch (err) {
@@ -416,20 +468,32 @@ export default function InsuranceOptionsPage() {
       const result = await response.json()
       console.log('API Response:', result)
       
+      const plans = Array.isArray(result?.plans) ? result.plans : []
+      const normalizedPlans = plans.map(normalizeInsurancePlan)
+      const mlProducts = Array.isArray(result?.carriers?.manhattanLife?.products)
+        ? result.carriers.manhattanLife.products.filter((p: any) => typeof p === 'string' && p.trim().length > 0)
+        : []
+
       // Update sessionStorage
-      if (result.plans && result.plans.length > 0) {
-        const normalizedPlans = result.plans.map(normalizeInsurancePlan)
+      sessionStorage.setItem('insuranceFormData', JSON.stringify(payloadForRequest))
+
+      if (normalizedPlans.length > 0) {
         sessionStorage.setItem('insurancePlans', JSON.stringify(normalizedPlans))
-        sessionStorage.setItem('insuranceFormData', JSON.stringify(payloadForRequest))
+        sessionStorage.setItem('manhattanLifeAgentProducts', JSON.stringify(mlProducts))
         
         // Update state
         setFormData(payloadForRequest)
         setInsurancePlans(normalizedPlans)
+        setManhattanLifeAgentProducts(mlProducts)
+        setCurrentPage(1)
         setError(null)
       } else {
         console.warn('No plans returned from API')
-        sessionStorage.setItem('insuranceFormData', JSON.stringify(payloadForRequest))
+        sessionStorage.removeItem('insurancePlans')
+        sessionStorage.removeItem('manhattanLifeAgentProducts')
         setInsurancePlans([])
+        setManhattanLifeAgentProducts([])
+        setCurrentPage(1)
         setError('No plans were returned for the provided information. Please review your details and try again.')
       }
       
@@ -438,6 +502,8 @@ export default function InsuranceOptionsPage() {
       // Reset filters
       setSelectedPlanType("all")
       setSelectedProductType("all")
+      setSelectedCarrier("all")
+      setSelectedMLProduct("all")
       setSortBy("default")
     } catch (error) {
       console.error('Error updating insurance quotes:', error)
@@ -445,6 +511,8 @@ export default function InsuranceOptionsPage() {
       sessionStorage.setItem('insuranceFormData', JSON.stringify(payloadForRequest))
       if (insurancePlans.length === 0) {
         setInsurancePlans([])
+        setManhattanLifeAgentProducts([])
+        setCurrentPage(1)
       }
       setError(error instanceof Error ? error.message : 'There was a problem fetching plans. Please try again later.')
       setIsEditModalOpen(false)
@@ -464,6 +532,14 @@ export default function InsuranceOptionsPage() {
   // Filter and sort plans
   const getFilteredAndSortedPlans = () => {
     let filtered = [...insurancePlans]
+
+    // Filter by carrier
+    if (selectedCarrier !== "all") {
+      filtered = filtered.filter(plan => {
+        const carrierSlug = plan.carrierSlug || (plan.allState ? "allstate" : "other")
+        return carrierSlug === selectedCarrier
+      })
+    }
 
     // Filter by plan type
     if (selectedPlanType !== "all") {
@@ -497,6 +573,16 @@ export default function InsuranceOptionsPage() {
       })
     }
 
+    // Filter by Manhattan Life product (client-side filtering)
+    if (selectedMLProduct !== "all") {
+      filtered = filtered.filter(plan => {
+        const productNameCandidate =
+          (plan.metadata?.productName || plan.productType || '').toString().trim().toLowerCase()
+        const selectedName = selectedMLProduct.trim().toLowerCase()
+        return productNameCandidate === selectedName
+      })
+    }
+
     // Sort plans
     if (sortBy === "price-low") {
       filtered.sort((a, b) => a.price - b.price)
@@ -522,6 +608,19 @@ export default function InsuranceOptionsPage() {
   }
 
   const filteredPlans = getFilteredAndSortedPlans()
+  const totalPages = filteredPlans.length > 0 ? Math.ceil(filteredPlans.length / PAGE_SIZE) : 1
+  const currentPageSafe = Math.min(currentPage, totalPages)
+  const paginatedPlans = filteredPlans.slice(
+    (currentPageSafe - 1) * PAGE_SIZE,
+    currentPageSafe * PAGE_SIZE
+  )
+
+  useEffect(() => {
+    const newTotalPages = filteredPlans.length > 0 ? Math.ceil(filteredPlans.length / PAGE_SIZE) : 1
+    if (currentPage > newTotalPages) {
+      setCurrentPage(newTotalPages)
+    }
+  }, [filteredPlans.length, currentPage])
   
   // Debug log for rendering
   console.log('🎨 [RENDER] State:', {
@@ -704,9 +803,15 @@ export default function InsuranceOptionsPage() {
               selectedPlanType={selectedPlanType}
               selectedProductType={selectedProductType}
               sortBy={sortBy}
+              selectedCarrier={selectedCarrier}
               onPlanTypeChange={setSelectedPlanType}
               onProductTypeChange={setSelectedProductType}
               onSortChange={setSortBy}
+              onCarrierChange={setSelectedCarrier}
+              plans={insurancePlans}
+              manhattanLifeAgentProducts={manhattanLifeAgentProducts}
+              selectedMLProduct={selectedMLProduct}
+              onMLProductChange={setSelectedMLProduct}
             />
 
             {/* Main content - Insurance cards grid */}
@@ -719,16 +824,40 @@ export default function InsuranceOptionsPage() {
                     </p>
                   </div>
                   <div className="grid md:grid-cols-2 gap-6">
-                    {filteredPlans.map((plan) => (
+                    {paginatedPlans.map((plan) => (
                       <InsuranceCard key={plan.id} plan={plan} /> 
                     ))}
                   </div>
+                  {filteredPlans.length > PAGE_SIZE && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+                      <Button
+                        variant="outline"
+                        disabled={currentPageSafe === 1}
+                        onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        Anterior
+                      </Button>
+                      <span className="text-sm text-gray-600">
+                        Página <span className="font-semibold text-gray-900">{currentPageSafe}</span> de{' '}
+                        <span className="font-semibold text-gray-900">{totalPages}</span>
+                      </span>
+                      <Button
+                        variant="outline"
+                        disabled={currentPageSafe === totalPages}
+                        onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      >
+                        Siguiente
+                      </Button>
+                    </div>
+                  )}
                 </>
               ) : (
                 <InsuranceEmptyState
                   onClearFilters={() => {
                     setSelectedPlanType("all")
                     setSelectedProductType("all")
+                    setSelectedCarrier("all")
+                    setSelectedMLProduct("all")
                     setSortBy("default")
                   }}
                 />

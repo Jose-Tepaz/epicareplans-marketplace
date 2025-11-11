@@ -33,7 +33,8 @@ export interface InsurancePlan {
   coverage: string;
   productType: string;
   benefits: string[];
-  allState: boolean;
+  allState?: boolean; // Opcional ahora - para Allstate
+  manhattanLife?: boolean; // Nuevo - para Manhattan Life
   planType: string;
   benefitDescription: string;
   brochureUrl?: string;
@@ -42,5 +43,5 @@ export interface InsurancePlan {
   // Campos necesarios para ApplicationBundle API
   productCode?: string;
   planKey?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown>; // Para riders, etc.
 }

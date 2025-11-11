@@ -20,6 +20,9 @@ import { useCart } from "@/contexts/cart-context"
 import { useCompare } from "@/contexts/compare-context"
 import { useState } from "react"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { CarrierBadge } from "@/components/carriers/shared/carrier-badge"
+import { RidersModal } from "@/components/carriers/manhattan-life/riders-modal"
+import type { ManhattanLifeRider } from "@/lib/api/carriers/manhattan-life/types"
 
 /**
  * Interface que define la estructura de un plan de seguro
@@ -44,11 +47,18 @@ interface InsurancePlan {
   coverage: string
   productType: string
   benefits: string[]
-  allState: boolean
+  allState?: boolean
+  manhattanLife?: boolean
   brochureUrl?: string
   planType: string
   benefitDescription: string
   carrierName?: string
+  carrierSlug?: string
+  metadata?: {
+    riders?: ManhattanLifeRider[]
+    ridersCount?: number
+    [key: string]: any
+  }
 }
 
 /**
@@ -103,6 +113,9 @@ interface InsuranceCardProps {
 export function InsuranceCard({ plan }: InsuranceCardProps) {
   // Estado para controlar la apertura/cierre del modal de detalles
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  
+  // Estado para controlar el modal de riders
+  const [showRidersModal, setShowRidersModal] = useState(false)
   
   // Hook del carrito
   const { addItem, isInCart } = useCart()
@@ -165,9 +178,12 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
           </div>
           <div>
             <h3 className="font-bold text-gray-900 text-lg mb-1">{plan.name}</h3>
-            {plan.allState && (
-              <Badge className="bg-primary hover:bg-primary text-white rounded-full text-xs px-3 py-1">All state</Badge>
-            )}
+            <div className="flex flex-wrap gap-2 mt-1">
+              {plan.allState && (
+                <Badge className="bg-primary hover:bg-primary text-white rounded-full text-xs px-3 py-1">All state</Badge>
+              )}
+              <CarrierBadge carrierSlug={plan.carrierSlug} carrierName={plan.carrierName} />
+            </div>
           </div>
         </div>
         <div className="text-right">
@@ -215,6 +231,27 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
           )}
         </div>
       </div>
+
+      {/* ===== SECCIÓN DE RIDERS (Manhattan Life) ===== */}
+      {plan.metadata?.ridersCount && plan.metadata.ridersCount > 0 && (
+        <div className="mb-6 p-3 bg-purple-50 rounded-lg border border-purple-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="bg-purple-100 text-purple-800">
+                {plan.metadata.ridersCount} riders available
+              </Badge>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setShowRidersModal(true)}
+              className="text-purple-700 hover:text-purple-900 hover:bg-purple-100"
+            >
+              View Details
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ===== BOTONES DE ACCIÓN ===== */}
       {/* Botón "See more": Abre el modal con información detallada del plan */}
@@ -273,6 +310,13 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
       plan={plan}
       isOpen={isDialogOpen}
       onOpenChange={setIsDialogOpen}
+    />
+
+    {/* ===== MODAL DE RIDERS (Manhattan Life) ===== */}
+    <RidersModal 
+      riders={plan.metadata?.riders || []}
+      open={showRidersModal}
+      onClose={() => setShowRidersModal(false)}
     />
     </>
   )
