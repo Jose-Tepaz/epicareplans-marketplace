@@ -39,7 +39,11 @@ export function InsuranceFiltersSidebar({
   // Obtener carriers disponibles
   const carrierEntries = plans.reduce((acc: Record<string, { label: string }>, plan: any) => {
     const slug = plan.carrierSlug || (plan.allState ? 'allstate' : 'other')
-    const label = plan.carrierName || (slug === 'allstate' ? 'Allstate' : slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))
+    const label =
+      plan.carrierName ||
+      (slug === 'allstate'
+        ? 'Allstate'
+        : slug.replace(/-/g, ' ').replace(/\b\w/g, (char: string) => char.toUpperCase()))
     if (!acc[slug]) {
       acc[slug] = { label }
     }

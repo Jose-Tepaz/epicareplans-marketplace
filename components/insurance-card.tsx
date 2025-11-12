@@ -196,7 +196,7 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
         {/* ===== SECCIÓN DE RIDERS (Manhattan Life) ===== */}
       
         {/* Solo mostrar la sección si hay riders y el número es mayor que 0 */}
-        {plan.metadata?.ridersCount > 0 && (
+        {plan.metadata?.ridersCount !== undefined && plan.metadata.ridersCount > 0 && (
           <div className="mb-6 p-3 bg-purple-50 rounded-lg border border-purple-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

@@ -16,22 +16,10 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { useCart } from "@/contexts/cart-context"
+import type { InsurancePlan as BaseInsurancePlan } from "@/lib/types/insurance"
 
-/**
- * Interface que define la estructura de un plan de seguro
- */
-interface InsurancePlan {
-  id: string
-  name: string
-  price: number
-  coverage: string
-  productType: string
+type InsurancePlan = BaseInsurancePlan & {
   benefits: string[]
-  allState: boolean
-  brochureUrl?: string
-  planType: string
-  benefitDescription: string
-  carrierName?: string
 }
 
 /**
