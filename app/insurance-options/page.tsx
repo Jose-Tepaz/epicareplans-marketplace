@@ -37,7 +37,6 @@ export default function InsuranceOptionsPage() {
   const [selectedPlanType, setSelectedPlanType] = useState<string>("all")
   const [selectedProductType, setSelectedProductType] = useState<string>("all")
   const [selectedCarrier, setSelectedCarrier] = useState<string>("all")
-  const [selectedMLProduct, setSelectedMLProduct] = useState<string>("all")
   const [manhattanLifeAgentProducts, setManhattanLifeAgentProducts] = useState<string[]>([])
   const [sortBy, setSortBy] = useState<string>("default")
   const [currentPage, setCurrentPage] = useState<number>(1)
@@ -63,6 +62,17 @@ export default function InsuranceOptionsPage() {
     paymentFrequency: ""
   })
 
+  const normalizeAgentProducts = (products: any[]): string[] => {
+    return Array.from(
+      new Set(
+        products
+          .filter((name): name is string => typeof name === 'string')
+          .map(name => name.trim())
+          .filter(name => name.length > 0)
+      )
+    )
+  }
+
   const normalizeInsurancePlan = (plan: any): InsurancePlan => {
     return {
       id: String(plan?.id ?? ""),
@@ -84,22 +94,9 @@ export default function InsuranceOptionsPage() {
     }
   }
 
-  // Asegurar coherencia entre filtros de carrier y productos Manhattan Life
-  useEffect(() => {
-    if (selectedMLProduct !== "all" && selectedCarrier !== "manhattan-life") {
-      setSelectedCarrier("manhattan-life")
-    }
-  }, [selectedMLProduct, selectedCarrier])
-
-  useEffect(() => {
-    if (selectedCarrier !== "manhattan-life" && selectedMLProduct !== "all") {
-      setSelectedMLProduct("all")
-    }
-  }, [selectedCarrier, selectedMLProduct])
-
   useEffect(() => {
     setCurrentPage(1)
-  }, [selectedPlanType, selectedProductType, selectedCarrier, selectedMLProduct, sortBy])
+  }, [selectedPlanType, selectedProductType, selectedCarrier, sortBy])
 
   // Verificar si el usuario autenticado tiene campos faltantes en su perfil
   useEffect(() => {
@@ -165,7 +162,7 @@ export default function InsuranceOptionsPage() {
           try {
             const parsedProducts = JSON.parse(storedAgentProducts)
             if (Array.isArray(parsedProducts)) {
-              setManhattanLifeAgentProducts(parsedProducts)
+              setManhattanLifeAgentProducts(normalizeAgentProducts(parsedProducts))
             } else {
               setManhattanLifeAgentProducts([])
             }
@@ -378,9 +375,10 @@ export default function InsuranceOptionsPage() {
           setInsurancePlans(normalizedPlans)
           setCurrentPage(1)
 
-          const mlProducts = Array.isArray(result?.carriers?.manhattanLife?.products)
-            ? result.carriers.manhattanLife.products.filter((p: any) => typeof p === 'string' && p.trim().length > 0)
+          const rawProducts = Array.isArray(result?.carriers?.manhattanLife?.products)
+            ? result.carriers.manhattanLife.products
             : []
+          const mlProducts = normalizeAgentProducts(rawProducts)
           setManhattanLifeAgentProducts(mlProducts)
 
           setError(null)
@@ -470,9 +468,10 @@ export default function InsuranceOptionsPage() {
       
       const plans = Array.isArray(result?.plans) ? result.plans : []
       const normalizedPlans = plans.map(normalizeInsurancePlan)
-      const mlProducts = Array.isArray(result?.carriers?.manhattanLife?.products)
-        ? result.carriers.manhattanLife.products.filter((p: any) => typeof p === 'string' && p.trim().length > 0)
+      const rawProducts = Array.isArray(result?.carriers?.manhattanLife?.products)
+        ? result.carriers.manhattanLife.products
         : []
+      const mlProducts = normalizeAgentProducts(rawProducts)
 
       // Update sessionStorage
       sessionStorage.setItem('insuranceFormData', JSON.stringify(payloadForRequest))
@@ -503,7 +502,6 @@ export default function InsuranceOptionsPage() {
       setSelectedPlanType("all")
       setSelectedProductType("all")
       setSelectedCarrier("all")
-      setSelectedMLProduct("all")
       setSortBy("default")
     } catch (error) {
       console.error('Error updating insurance quotes:', error)
@@ -543,19 +541,28 @@ export default function InsuranceOptionsPage() {
 
     // Filter by plan type
     if (selectedPlanType !== "all") {
+      const selectedLower = selectedPlanType.toLowerCase()
+      const dynamicPlanNamesLower = manhattanLifeAgentProducts.map(name => name.toLowerCase())
+
       filtered = filtered.filter(plan => {
         const planTypeLower = plan.planType?.toLowerCase() || ""
-        
-        if (selectedPlanType === "accident") {
+        const productNameLower = (plan.metadata?.productName || plan.productType || "").toString().toLowerCase()
+
+        if (selectedLower === "accident") {
           return planTypeLower.includes("nic") || planTypeLower.includes("afb") || planTypeLower.includes("accident")
-        } else if (selectedPlanType === "life") {
+        } else if (selectedLower === "life") {
           return planTypeLower.includes("life")
-        } else if (selectedPlanType === "dental") {
+        } else if (selectedLower === "dental") {
           return planTypeLower.includes("dental")
-        } else if (selectedPlanType === "vision") {
+        } else if (selectedLower === "vision") {
           return planTypeLower.includes("vision")
         }
-        return true
+
+        if (dynamicPlanNamesLower.includes(selectedLower)) {
+          return productNameLower === selectedLower
+        }
+
+        return planTypeLower === selectedLower || productNameLower === selectedLower
       })
     }
 
@@ -570,16 +577,6 @@ export default function InsuranceOptionsPage() {
           return plan.productType?.toLowerCase().includes("secondary")
         }
         return true
-      })
-    }
-
-    // Filter by Manhattan Life product (client-side filtering)
-    if (selectedMLProduct !== "all") {
-      filtered = filtered.filter(plan => {
-        const productNameCandidate =
-          (plan.metadata?.productName || plan.productType || '').toString().trim().toLowerCase()
-        const selectedName = selectedMLProduct.trim().toLowerCase()
-        return productNameCandidate === selectedName
       })
     }
 
@@ -809,9 +806,7 @@ export default function InsuranceOptionsPage() {
               onSortChange={setSortBy}
               onCarrierChange={setSelectedCarrier}
               plans={insurancePlans}
-              manhattanLifeAgentProducts={manhattanLifeAgentProducts}
-              selectedMLProduct={selectedMLProduct}
-              onMLProductChange={setSelectedMLProduct}
+              dynamicPlanTypes={manhattanLifeAgentProducts}
             />
 
             {/* Main content - Insurance cards grid */}
@@ -857,7 +852,6 @@ export default function InsuranceOptionsPage() {
                     setSelectedPlanType("all")
                     setSelectedProductType("all")
                     setSelectedCarrier("all")
-                    setSelectedMLProduct("all")
                     setSortBy("default")
                   }}
                 />

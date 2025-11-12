@@ -11,9 +11,6 @@
  */
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ManhattanLifeProductFilter } from "@/components/carriers/manhattan-life/product-filter"
-import { Label } from "@/components/ui/label"
-
 interface InsuranceFiltersSidebarProps {
   selectedPlanType: string
   selectedProductType: string
@@ -23,11 +20,8 @@ interface InsuranceFiltersSidebarProps {
   onProductTypeChange: (value: string) => void
   onSortChange: (value: string) => void
   onCarrierChange: (value: string) => void
-  // Manhattan Life filters
   plans?: any[]
-  manhattanLifeAgentProducts?: string[]
-  selectedMLProduct?: string
-  onMLProductChange?: (value: string) => void
+  dynamicPlanTypes?: string[]
 }
 
 export function InsuranceFiltersSidebar({
@@ -40,9 +34,7 @@ export function InsuranceFiltersSidebar({
   onSortChange,
   onCarrierChange,
   plans = [],
-  manhattanLifeAgentProducts = [],
-  selectedMLProduct = "all",
-  onMLProductChange = () => {}
+  dynamicPlanTypes = []
 }: InsuranceFiltersSidebarProps) {
   // Obtener carriers disponibles
   const carrierEntries = plans.reduce((acc: Record<string, { label: string }>, plan: any) => {
@@ -54,7 +46,7 @@ export function InsuranceFiltersSidebar({
     return acc
   }, {})
 
-  if (!carrierEntries['manhattan-life'] && manhattanLifeAgentProducts.length > 0) {
+  if (!carrierEntries['manhattan-life'] && dynamicPlanTypes.length > 0) {
     carrierEntries['manhattan-life'] = { label: 'Manhattan Life' }
   }
 
@@ -63,29 +55,35 @@ export function InsuranceFiltersSidebar({
     label: data.label
   }))
 
-  // Detectar si hay planes de Manhattan Life
-  const manhattanLifePlans = plans.filter((p: any) => p.manhattanLife)
-  const hasManhattanLifePlans = manhattanLifePlans.length > 0
-  const hasAgentProducts = manhattanLifeAgentProducts.length > 0
-  const shouldShowMLFilter =
-    (hasManhattanLifePlans || hasAgentProducts) &&
-    (selectedCarrier === 'all' || selectedCarrier === 'manhattan-life')
-  
-  // Extraer productos únicos de Manhattan Life
-  const derivedProducts = manhattanLifePlans
-    .map((p: any) => p.metadata?.productName)
-    .filter((name: any) => typeof name === 'string' && name.trim().length > 0)
-
-  const manhattanLifeProducts = [
-    ...new Set([
-      ...manhattanLifeAgentProducts,
-      ...derivedProducts
-    ])
-  ] as string[]
+  const sanitizedDynamicPlanTypes = Array.from(
+    new Set(
+      dynamicPlanTypes
+        .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+        .map(name => name.trim())
+    )
+  )
 
   return (
     <aside className="lg:w-64 flex-shrink-0">
       <div className="space-y-6">
+        {/* Carrier Filter */}
+        <div>
+          <label className="text-sm font-semibold text-gray-900 mb-2 block">Carrier</label>
+          <Select value={selectedCarrier} onValueChange={onCarrierChange}>
+            <SelectTrigger className="w-full rounded-full border-2 border-gray-300 h-12">
+              <SelectValue placeholder="All Carriers" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Carriers</SelectItem>
+              {carrierOptions.map(option => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Plan Type Filter */}
         <div>
           <label className="text-sm font-semibold text-gray-900 mb-2 block">Plan Type</label>
@@ -99,22 +97,9 @@ export function InsuranceFiltersSidebar({
               <SelectItem value="life">Life Only - Individual</SelectItem>
               <SelectItem value="dental">Dental Plans</SelectItem>
               <SelectItem value="vision">Vision Plans</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Carrier Filter */}
-        <div>
-          <label className="text-sm font-semibold text-gray-900 mb-2 block">Carrier</label>
-          <Select value={selectedCarrier} onValueChange={onCarrierChange}>
-            <SelectTrigger className="w-full rounded-full border-2 border-gray-300 h-12">
-              <SelectValue placeholder="All Carriers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Carriers</SelectItem>
-              {carrierOptions.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
+              {sanitizedDynamicPlanTypes.map(option => (
+                <SelectItem key={`dynamic-plan-${option}`} value={option}>
+                  {option}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -136,20 +121,6 @@ export function InsuranceFiltersSidebar({
             </SelectContent>
           </Select>
         </div>
-
-        {/* Manhattan Life Products Filter - Solo se muestra si hay planes de ML */}
-        {shouldShowMLFilter && (
-          <div>
-            <Label className="text-sm font-semibold text-gray-900 mb-2 block">
-              Manhattan Life Products
-            </Label>
-            <ManhattanLifeProductFilter
-              products={manhattanLifeProducts}
-              selected={selectedMLProduct}
-              onSelect={onMLProductChange}
-            />
-          </div>
-        )}
 
         {/* Sort Filter */}
         <div>

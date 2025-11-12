@@ -23,6 +23,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { CarrierBadge } from "@/components/carriers/shared/carrier-badge"
 import { RidersModal } from "@/components/carriers/manhattan-life/riders-modal"
 import type { ManhattanLifeRider } from "@/lib/api/carriers/manhattan-life/types"
+import type { InsurancePlan as BaseInsurancePlan } from "@/lib/types/insurance"
 
 /**
  * Interface que define la estructura de un plan de seguro
@@ -40,25 +41,13 @@ import type { ManhattanLifeRider } from "@/lib/api/carriers/manhattan-life/types
  * @property {string} benefitDescription - Descripción detallada de los beneficios
  * @property {string} [carrierName] - Nombre opcional de la aseguradora/carrier
  */
-interface InsurancePlan {
-  id: string
-  name: string
-  price: number
-  coverage: string
-  productType: string
-  benefits: string[]
-  allState?: boolean
-  manhattanLife?: boolean
-  brochureUrl?: string
-  planType: string
-  benefitDescription: string
-  carrierName?: string
-  carrierSlug?: string
-  metadata?: {
-    riders?: ManhattanLifeRider[]
-    ridersCount?: number
-    [key: string]: any
-  }
+type InsurancePlan = BaseInsurancePlan & {
+  metadata?: (BaseInsurancePlan["metadata"] extends Record<string, unknown>
+    ? BaseInsurancePlan["metadata"]
+    : Record<string, unknown>) & {
+      riders?: ManhattanLifeRider[]
+      ridersCount?: number
+    }
 }
 
 /**
@@ -113,16 +102,16 @@ interface InsuranceCardProps {
 export function InsuranceCard({ plan }: InsuranceCardProps) {
   // Estado para controlar la apertura/cierre del modal de detalles
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  
+
   // Estado para controlar el modal de riders
   const [showRidersModal, setShowRidersModal] = useState(false)
-  
+
   // Hook del carrito
   const { addItem, isInCart } = useCart()
-  
+
   // Hook de comparación
   const { addPlanToCompare, removePlanFromCompare, isInComparison, canAddMore } = useCompare()
-  
+
   // Verificar si el plan ya está en el carrito
   const inCart = isInCart(plan.id)
 
@@ -147,177 +136,172 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
 
   return (
     <>
-    {/* ===== TARJETA PRINCIPAL ===== */}
-    <div className="border-2 border-primary rounded-3xl p-6 bg-white hover:shadow-lg transition-shadow relative">
-      
-      {/* ===== CHECKBOX DE COMPARACIÓN ===== */}
-      <div className="absolute bottom-4 right-4 z-20 group">
-        
-        <div className="relative flex items-center gap-2">
-        <span className="text-xs text-gray-600">Add to comparison</span>
-          <Checkbox
-            checked={inComparison}
-            onCheckedChange={handleCompareToggle}
-            disabled={!canAddMore && !inComparison}
-            className="size-6 border-2 border-gray-400 data-[state=checked]:bg-primary data-[state=checked]:border-primary disabled:opacity-40"
-            aria-label="Add to comparison"
-          />
-          
-       
-         
-          
+      {/* ===== TARJETA PRINCIPAL ===== */}
+      <div className="flex flex-col border-2 border-primary rounded-3xl p-6 bg-white hover:shadow-lg transition-shadow relative">
+
+        {/* ===== HEADER: Ícono, nombre y precio ===== */}
+        {/* Muestra el nombre del plan, badge "All state" (si aplica) y precio mensual */}
+        <div className="flex items-start justify-between mb-6">
+          <div className="flex items-start gap-3 pr-8">
+            <div className="w-12 h-12 bg-cyan/10 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Shield className="w-6 h-6 text-cyan" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900 text-lg mb-1">{plan.name}</h3>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {plan.allState && (
+                  <Badge className="bg-primary hover:bg-primary text-white rounded-full text-xs px-3 py-1">All state</Badge>
+                )}
+                <CarrierBadge carrierSlug={plan.carrierSlug} carrierName={plan.carrierName} />
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-3xl font-bold text-primary">${plan.price.toFixed(2)}</div>
+            <div className="text-sm text-gray-600">per month</div>
+          </div>
         </div>
-      </div>
-      
-      {/* ===== HEADER: Ícono, nombre y precio ===== */}
-      {/* Muestra el nombre del plan, badge "All state" (si aplica) y precio mensual */}
-      <div className="flex items-start justify-between mb-6">
-        <div className="flex items-start gap-3 pr-8">
-          <div className="w-12 h-12 bg-cyan/10 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Shield className="w-6 h-6 text-cyan" />
+
+        {/* ===== INFORMACIÓN DE COBERTURA Y TIPO DE PRODUCTO ===== */}
+        {/* Grid de 2 columnas con la cobertura y tipo de producto del plan */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <div className="text-sm font-semibold text-gray-900 mb-1">Coverage:</div>
+            <div className="text-sm text-gray-700">{plan.coverage}</div>
           </div>
           <div>
-            <h3 className="font-bold text-gray-900 text-lg mb-1">{plan.name}</h3>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {plan.allState && (
-                <Badge className="bg-primary hover:bg-primary text-white rounded-full text-xs px-3 py-1">All state</Badge>
-              )}
-              <CarrierBadge carrierSlug={plan.carrierSlug} carrierName={plan.carrierName} />
-            </div>
+            <div className="text-sm font-semibold text-gray-900 mb-1">Product Type</div>
+            <div className="text-sm text-gray-700">{plan.productType}</div>
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-3xl font-bold text-primary">${plan.price.toFixed(2)}</div>
-          <div className="text-sm text-gray-600">per month</div>
-        </div>
-      </div>
 
-      {/* ===== INFORMACIÓN DE COBERTURA Y TIPO DE PRODUCTO ===== */}
-      {/* Grid de 2 columnas con la cobertura y tipo de producto del plan */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div>
-          <div className="text-sm font-semibold text-gray-900 mb-1">Coverage:</div>
-          <div className="text-sm text-gray-700">{plan.coverage}</div>
-        </div>
-        <div>
-          <div className="text-sm font-semibold text-gray-900 mb-1">Product Type</div>
-          <div className="text-sm text-gray-700">{plan.productType}</div>
-        </div>
-      </div>
-
-      {/* ===== SECCIÓN DE BENEFICIOS ===== */}
-      {/* Muestra los primeros 3 beneficios como badges, con indicador de cantidad adicional */}
-      <div className="mb-6">
-        <div className="text-sm font-semibold text-gray-900 mb-3">Benefits</div>
-        <div className="flex flex-wrap gap-2">
-          {/* Mapea solo los primeros 3 beneficios para vista previa */}
-          {plan.benefits.slice(0, 3).map((benefit, index) => (
-            <Badge
-              key={index}
-              variant="secondary"
-              className="bg-cyan/10 text-cyan hover:bg-cyan/20 rounded-full px-3 py-1 text-xs font-medium"
-            >
-              {benefit}
-            </Badge>
-          ))}
-          {/* Badge indicador de beneficios adicionales si hay más de 3 */}
-          {plan.benefits.length > 3 && (
-            <Badge
-              variant="secondary"
-              className="bg-gray-100 text-gray-600 rounded-full px-3 py-1 text-xs font-medium"
-            >
-              +{plan.benefits.length - 3} more
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {/* ===== SECCIÓN DE RIDERS (Manhattan Life) ===== */}
-      {plan.metadata?.ridersCount && plan.metadata.ridersCount > 0 && (
-        <div className="mb-6 p-3 bg-purple-50 rounded-lg border border-purple-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="bg-purple-100 text-purple-800">
-                {plan.metadata.ridersCount} riders available
-              </Badge>
+        {/* ===== SECCIÓN DE BENEFICIOS ===== */}
+        {/* Muestra los primeros 3 beneficios como badges, con indicador de cantidad adicional */}
+        {
+          plan.benefits.length > 0 && (
+            <div className="mb-6">
+              <div className="text-sm font-semibold text-gray-900 mb-3">Benefits</div>
+              <div className="flex flex-wrap gap-2">
+                {plan.benefits.slice(0, 3).map((benefit, index) => (
+                  <Badge key={index} variant="secondary" className="bg-cyan/10 text-cyan hover:bg-cyan/20 rounded-full px-3 py-1 text-xs font-medium">
+                    {benefit}
+                  </Badge>
+                ))}
+              </div>
             </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => setShowRidersModal(true)}
-              className="text-purple-700 hover:text-purple-900 hover:bg-purple-100"
-            >
-              View Details
-            </Button>
+          )
+        }
+        
+
+        {/* ===== SECCIÓN DE RIDERS (Manhattan Life) ===== */}
+      
+        {/* Solo mostrar la sección si hay riders y el número es mayor que 0 */}
+        {plan.metadata?.ridersCount > 0 && (
+          <div className="mb-6 p-3 bg-purple-50 rounded-lg border border-purple-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="bg-purple-100 text-purple-800">
+                  {plan.metadata.ridersCount} riders available
+                </Badge>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowRidersModal(true)}
+                className="text-purple-700 hover:text-purple-900 hover:bg-purple-100"
+              >
+                View Details
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+       
+      
 
-      {/* ===== BOTONES DE ACCIÓN ===== */}
-      {/* Botón "See more": Abre el modal con información detallada del plan */}
-      {/* Botón "Select this plan": Agrega el plan al carrito */}
-      <div className="flex gap-3">
-        <Button
-          variant="outline"
-          onClick={() => setIsDialogOpen(true)}
-          className="flex-1 rounded-full border-2 border-primary text-primary hover:bg-primary hover:text-white h-12 font-semibold bg-transparent transition-all"
-        >
-          See more
-        </Button>
-        <Button 
-          onClick={handleSelectPlan}
-          disabled={inCart}
-          className={`flex-1 rounded-full h-12 font-semibold transition-all ${
-            inCart 
-              ? 'bg-green-600 hover:bg-green-600 text-white cursor-default' 
-              : 'bg-primary hover:bg-primary/90 text-white'
-          }`}
-        >
-          {inCart ? (
-            <>
-              <Check className="w-4 h-4 mr-2" />
-              Added to Cart
-            </>
-          ) : (
-            'Select this plan'
-          )}
-        </Button>
-      </div>
-
-      {/* ===== ENLACE DE DESCARGA DEL BROCHURE ===== */}
-      {/* Se muestra solo si el plan tiene brochureUrl disponible */}
-      {plan.brochureUrl && (
-        <div className="mt-4 text-center">
-          <a 
-            href={plan.brochureUrl} 
-            download
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-cyan hover:underline font-medium"
+        {/* ===== BOTONES DE ACCIÓN ===== */}
+        {/* Botón "See more": Abre el modal con información detallada del plan */}
+        {/* Botón "Select this plan": Agrega el plan al carrito */}
+        <div className="flex gap-3 mt-auto mb-4">
+          <Button
+            variant="outline"
+            onClick={() => setIsDialogOpen(true)}
+            className="flex-1 rounded-full border-2 border-primary text-primary hover:bg-primary hover:text-white h-12 font-semibold bg-transparent transition-all"
           >
-            Brochure Download 
-          </a>
+            See more
+          </Button>
+          <Button
+            onClick={handleSelectPlan}
+            disabled={inCart}
+            className={`flex-1 rounded-full h-12 font-semibold transition-all ${inCart
+              ? 'bg-green-600 hover:bg-green-600 text-white cursor-default'
+              : 'bg-primary hover:bg-primary/90 text-white'
+              }`}
+          >
+            {inCart ? (
+              <>
+                <Check className="w-4 h-4 mr-2" />
+                Added to Cart
+              </>
+            ) : (
+              'Select this plan'
+            )}
+          </Button>
         </div>
-      )}
-    </div>
 
-    {/* ===== MODAL DE DETALLES DEL PLAN ===== */}
-    {/* 
+        {/* ===== ENLACE DE DESCARGA DEL BROCHURE ===== */}
+        {/* Se muestra solo si el plan tiene brochureUrl disponible */}
+        <div className="flex items-center justify-between ">
+          {plan.brochureUrl && (
+            <div className=" text-center">
+              <a
+                href={plan.brochureUrl}
+                download
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-cyan hover:underline font-medium"
+              >
+                Brochure Download
+              </a>
+            </div>
+          )}
+
+          {/* ===== CHECKBOX DE COMPARACIÓN ===== */}
+          <div className=" z-20 group ml-auto">
+
+            <div className="relative flex items-center gap-2">
+              <span className="text-xs text-gray-600">Add to comparison</span>
+              <Checkbox
+                checked={inComparison}
+                onCheckedChange={handleCompareToggle}
+                disabled={!canAddMore && !inComparison}
+                className="size-6 border-2 border-gray-400 data-[state=checked]:bg-primary data-[state=checked]:border-primary disabled:opacity-40"
+                aria-label="Add to comparison"
+              />
+            </div>
+          </div>
+
+        </div>
+
+
+      </div>
+
+      {/* ===== MODAL DE DETALLES DEL PLAN ===== */}
+      {/* 
       Modal que se abre al hacer clic en "See more"
       Ahora en un componente separado para mejor organización
     */}
-    <InsurancePlanModal
-      plan={plan}
-      isOpen={isDialogOpen}
-      onOpenChange={setIsDialogOpen}
-    />
+      <InsurancePlanModal
+        plan={plan}
+        isOpen={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+      />
 
-    {/* ===== MODAL DE RIDERS (Manhattan Life) ===== */}
-    <RidersModal 
-      riders={plan.metadata?.riders || []}
-      open={showRidersModal}
-      onClose={() => setShowRidersModal(false)}
-    />
+      {/* ===== MODAL DE RIDERS (Manhattan Life) ===== */}
+      <RidersModal
+        riders={plan.metadata?.riders || []}
+        open={showRidersModal}
+        onClose={() => setShowRidersModal(false)}
+      />
     </>
   )
 }
