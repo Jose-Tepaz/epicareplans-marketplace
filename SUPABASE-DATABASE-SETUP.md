@@ -127,7 +127,7 @@ insert into public.roles (name, description) values
 ('support_staff', 'Personal de soporte para gestion de tickets y usuarios'),
 ('finance_staff', 'Personal de finanzas para gestion de pagos y comisiones'),
 ('agent', 'Agente de ventas'),
-('user', 'Usuario estandar del sistema');
+('cliente', 'Cliente estándar del sistema');
 ```
 
 ### 2.3 Tabla: user_roles

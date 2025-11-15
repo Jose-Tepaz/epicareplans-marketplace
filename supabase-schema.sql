@@ -75,7 +75,7 @@ create table public.roles (
   created_at timestamp with time zone default current_timestamp
 );
 
-comment on table public.roles is 'Roles disponibles: admin, support_staff, finance_staff, agent, user';
+comment on table public.roles is 'Roles disponibles: admin, support_staff, finance_staff, agent, cliente';
 
 -- Enable RLS
 alter table public.roles enable row level security;
@@ -91,7 +91,7 @@ insert into public.roles (name, description) values
 ('support_staff', 'Personal de soporte para gestion de tickets y usuarios'),
 ('finance_staff', 'Personal de finanzas para gestion de pagos y comisiones'),
 ('agent', 'Agente de ventas'),
-('user', 'Usuario estandar del sistema');
+('cliente', 'Cliente estándar del sistema');
 
 -- ============================================
 -- 3. USER_ROLES TABLE
