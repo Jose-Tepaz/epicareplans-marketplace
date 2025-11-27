@@ -34,6 +34,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('❌ Error in recordEnrollmentStart API:', error)
-    return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error', details: (error as Error).message || 'Unknown error' }, { status: 500 })
   }
 }

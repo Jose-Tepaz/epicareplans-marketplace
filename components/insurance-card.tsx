@@ -11,17 +11,20 @@
 
 "use client"
 
-import { Shield, Check } from "lucide-react"
+import { Shield, Check, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { InsurancePlanModal } from "@/components/insurance-plan-modal"
 import { useCart } from "@/contexts/cart-context"
 import { useCompare } from "@/contexts/compare-context"
+import { useFamilyMembers } from "@/hooks/use-family-members"
 import { useState } from "react"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { CarrierBadge } from "@/components/carriers/shared/carrier-badge"
 import { RidersModal } from "@/components/carriers/manhattan-life/riders-modal"
+import { toast } from "sonner"
+import { buildPrimaryApplicant, getUpdatedPlanPrice } from "@/lib/api/carriers/allstate-rate-cart"
 import type { ManhattanLifeRider } from "@/lib/api/carriers/manhattan-life/types"
 import type { InsurancePlan as BaseInsurancePlan } from "@/lib/types/insurance"
 
@@ -106,11 +109,17 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
   // Estado para controlar el modal de riders
   const [showRidersModal, setShowRidersModal] = useState(false)
 
+  // Estado para calcular precio con Rate/Cart
+  const [isCalculatingPrice, setIsCalculatingPrice] = useState(false)
+
   // Hook del carrito
   const { addItem, isInCart } = useCart()
 
   // Hook de comparación
   const { addPlanToCompare, removePlanFromCompare, isInComparison, canAddMore } = useCompare()
+
+  // Hook de family members
+  const { familyMembers } = useFamilyMembers()
 
   // Verificar si el plan ya está en el carrito
   const inCart = isInCart(plan.id)
@@ -119,8 +128,97 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
   const inComparison = isInComparison(plan.id)
 
   // Manejar la selección del plan
-  const handleSelectPlan = () => {
-    addItem(plan)
+  const handleSelectPlan = async () => {
+    // Si no hay family members o no es un plan de Allstate, agregar directamente
+    const isAllstatePlan = plan.carrierSlug === 'allstate' || plan.allState
+    
+    if (familyMembers.length === 0 || !isAllstatePlan) {
+      addItem(plan)
+      return
+    }
+
+    // Si hay family members, calcular precio actualizado con Rate/Cart
+    setIsCalculatingPrice(true)
+
+    try {
+      // Obtener datos del usuario desde sessionStorage
+      const insuranceFormData = sessionStorage.getItem('insuranceFormData')
+      
+      if (!insuranceFormData) {
+        toast.warning('Missing user information', {
+          description: 'Adding plan with base price. Complete your profile for accurate multi-person pricing.'
+        })
+        addItem(plan)
+        return
+      }
+
+      const formData = JSON.parse(insuranceFormData)
+
+      // Construir primary applicant
+      const primaryApplicant = buildPrimaryApplicant({
+        dateOfBirth: formData.dateOfBirth,
+        gender: formData.gender,
+        smokes: formData.smokes || false,
+        hasPriorCoverage: false
+      })
+
+      // Obtener precio actualizado
+      console.log('🔄 Calculating price with Rate/Cart for:', plan.name)
+      console.log('🔄 Family members:', familyMembers.length)
+
+      const result = await getUpdatedPlanPrice(
+        primaryApplicant,
+        familyMembers,
+        plan,
+        {
+          zipCode: formData.zipCode,
+          state: formData.state || 'NJ',
+          effectiveDate: formData.coverageStartDate,
+          paymentFrequency: formData.paymentFrequency || 'Monthly'
+        }
+      )
+
+      if (result.success && result.price !== result.originalPrice) {
+        // Crear plan con precio actualizado
+        const updatedPlan = {
+          ...plan,
+          price: result.price,
+          metadata: {
+            ...plan.metadata,
+            originalPrice: result.originalPrice,
+            priceUpdatedWithRateCart: true,
+            applicantsIncluded: familyMembers.length + 1
+          }
+        }
+
+        addItem(updatedPlan)
+        
+        toast.success('Price updated for family coverage', {
+          description: `Updated from $${result.originalPrice.toFixed(2)} to $${result.price.toFixed(2)} for ${familyMembers.length + 1} applicants`
+        })
+      } else {
+        // Agregar con precio original si falla o es el mismo
+        addItem(plan)
+        
+        if (!result.success) {
+          toast.warning('Using base price', {
+            description: result.error || 'Could not calculate multi-person pricing. Added with base price.'
+          })
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Error calculating price:', error)
+      
+      // Agregar con precio original en caso de error
+      addItem(plan)
+      
+      toast.warning('Using base price', {
+        description: 'Could not calculate multi-person pricing. Added with base price.'
+      })
+    } finally {
+      setIsCalculatingPrice(false)
+    }
   }
 
   // Manejar el checkbox de comparación
@@ -231,16 +329,24 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
           </Button>
           <Button
             onClick={handleSelectPlan}
-            disabled={inCart}
-            className={`flex-1 rounded-full h-12 font-semibold transition-all ${inCart
-              ? 'bg-green-600 hover:bg-green-600 text-white cursor-default'
-              : 'bg-primary hover:bg-primary/90 text-white'
-              }`}
+            disabled={inCart || isCalculatingPrice}
+            className={`flex-1 rounded-full h-12 font-semibold transition-all ${
+              inCart
+                ? 'bg-green-600 hover:bg-green-600 text-white cursor-default'
+                : isCalculatingPrice
+                ? 'bg-primary/70 text-white cursor-wait'
+                : 'bg-primary hover:bg-primary/90 text-white'
+            }`}
           >
             {inCart ? (
               <>
                 <Check className="w-4 h-4 mr-2" />
                 Added to Cart
+              </>
+            ) : isCalculatingPrice ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Calculating price...
               </>
             ) : (
               'Select this plan'

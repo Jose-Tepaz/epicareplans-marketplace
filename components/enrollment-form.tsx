@@ -15,14 +15,19 @@ interface EnrollmentFormProps {
   currentStep: number
   formData: EnrollmentFormState
   updateFormData: (field: keyof EnrollmentFormState, value: any) => void
+  onStep1ValidationChange?: (isValid: boolean, errors: string[]) => void
 }
 
-export function EnrollmentForm({ currentStep, formData, updateFormData }: EnrollmentFormProps) {
+export function EnrollmentForm({ currentStep, formData, updateFormData, onStep1ValidationChange }: EnrollmentFormProps) {
   return (
     <div className="space-y-6">
       {/* Step 1: ApplicationBundle Questions */}
       {currentStep === 1 && (
-        <Step1DynamicQuestions formData={formData} updateFormData={updateFormData} />
+        <Step1DynamicQuestions 
+          formData={formData} 
+          updateFormData={updateFormData}
+          onValidationChange={onStep1ValidationChange}
+        />
       )}
 
       {/* Step 2: Personal Information */}

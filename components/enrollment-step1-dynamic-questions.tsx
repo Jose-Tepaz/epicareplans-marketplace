@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { toast } from "sonner"
 import { DynamicQuestionsForm } from "@/components/dynamic-questions-form"
 import { DebugApplicationBundle } from "@/components/debug-application-bundle"
@@ -10,14 +10,25 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, AlertTriangle, CheckCircle } from "lucide-react"
-import type { EnrollmentFormState } from "@/lib/types/enrollment"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
+import { Loader2, AlertTriangle, CheckCircle, User, Users } from "lucide-react"
+import type { EnrollmentFormState, Applicant } from "@/lib/types/enrollment"
 import type { 
   EligibilityQuestion, 
   DynamicQuestionResponse, 
   QuestionValidation,
   DynamicFormState 
 } from "@/lib/types/application-bundle"
+
+// Interfaz para representar un aplicante con sus datos básicos
+interface ApplicantInfo {
+  id: string
+  name: string
+  relationship: string
+  isPrimary: boolean
+  index: number // -1 para primary, 0+ para additional
+}
 
 interface Step1DynamicQuestionsProps {
   formData: EnrollmentFormState
@@ -39,6 +50,39 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
   const [dateError, setDateError] = useState<string | null>(null)
   const [showDateFix, setShowDateFix] = useState(false)
   const [newEffectiveDate, setNewEffectiveDate] = useState<string>('')
+  const [activeApplicantTab, setActiveApplicantTab] = useState<string>('primary')
+  
+  // Estado para rastrear la validación de cada aplicante
+  const [applicantValidations, setApplicantValidations] = useState<Record<string, { isValid: boolean; errors: string[] }>>({})
+
+  // Construir la lista de todos los aplicantes - memoizado para evitar re-renders infinitos
+  const allApplicants: ApplicantInfo[] = useMemo(() => [
+    {
+      id: 'primary',
+      name: `${formData.firstName || 'Primary'} ${formData.lastName || 'Applicant'}`.trim(),
+      relationship: 'Primary',
+      isPrimary: true,
+      index: -1
+    },
+    ...(formData.additionalApplicants || []).map((app, index) => ({
+      id: `additional-${index}`,
+      name: `${app.firstName || 'Additional'} ${app.lastName || 'Applicant'}`.trim(),
+      relationship: app.relationship || 'Dependent',
+      isPrimary: false,
+      index
+    }))
+  ], [formData.firstName, formData.lastName, formData.additionalApplicants])
+
+  // Obtener las respuestas de un aplicante específico
+  const getApplicantResponses = (applicantId: string): DynamicQuestionResponse[] => {
+    if (applicantId === 'primary') {
+      return formData.questionResponses || []
+    }
+    const index = parseInt(applicantId.replace('additional-', ''))
+    return formData.additionalApplicants?.[index]?.questionResponses || []
+  }
+
+  // NOTA: Las respuestas de cada aplicante se actualizan directamente en applicantResponsesHandlers
 
   // Cargar preguntas dinámicas cuando el componente se monta, asegurando effectiveDate válido
   useEffect(() => {
@@ -312,22 +356,208 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
 
   const isUpdating = useRef(false)
   
-  const handleResponsesChange = useCallback((
-    responses: DynamicQuestionResponse[], 
-    newValidation: QuestionValidation
-  ) => {
-    if (isUpdating.current) return
+  // Ref para almacenar el formData actual (para evitar closures stale en handlers)
+  const formDataRef = useRef(formData)
+  useEffect(() => {
+    formDataRef.current = formData
+  }, [formData])
+  
+  // Crear handlers memoizados para cada aplicante
+  // Usamos useRef + useMemo para evitar recrear handlers en cada render
+  const applicantResponsesHandlers = useMemo(() => {
+    const handlers: Record<string, (responses: DynamicQuestionResponse[], newValidation: QuestionValidation) => void> = {}
     
-    isUpdating.current = true
-    setValidation(newValidation)
-    updateFormData('questionResponses', responses)
+    allApplicants.forEach(applicant => {
+      handlers[applicant.id] = (responses: DynamicQuestionResponse[], newValidation: QuestionValidation) => {
+        if (isUpdating.current) return
+        
+        isUpdating.current = true
+        
+        // Actualizar respuestas del aplicante específico
+        if (applicant.id === 'primary') {
+          updateFormData('questionResponses', responses)
+        } else {
+          const index = parseInt(applicant.id.replace('additional-', ''))
+          // Usar el ref para obtener el estado actual de additionalApplicants
+          const currentAdditionalApplicants = [...(formDataRef.current.additionalApplicants || [])]
+          if (currentAdditionalApplicants[index]) {
+            currentAdditionalApplicants[index] = {
+              ...currentAdditionalApplicants[index],
+              questionResponses: responses
+            }
+            updateFormData('additionalApplicants', currentAdditionalApplicants)
+          }
+        }
+        
+        // Actualizar validación de este aplicante
+        setApplicantValidations(prev => ({
+          ...prev,
+          [applicant.id]: { isValid: newValidation.isValid, errors: newValidation.errors }
+        }))
+        
+        // Reset flag after a short delay
+        setTimeout(() => {
+          isUpdating.current = false
+        }, 0)
+      }
+    })
     
-    // Reset flag after a short delay
-    setTimeout(() => {
-      isUpdating.current = false
-    }, 0)
-  }, [updateFormData])
-
+    return handlers
+  }, [allApplicants, updateFormData])
+  
+  // Crear handlers memoizados para onValidateForNext de cada aplicante
+  const applicantValidateHandlers = useMemo(() => {
+    const handlers: Record<string, (isValid: boolean, errors: string[]) => void> = {}
+    
+    allApplicants.forEach(applicant => {
+      handlers[applicant.id] = (isValid: boolean, errors: string[]) => {
+        console.log(`📝 Validación actualizada para ${applicant.name}:`, { isValid, errors })
+        setApplicantValidations(prev => {
+          // Solo actualizar si realmente cambió
+          const current = prev[applicant.id]
+          if (current?.isValid === isValid && 
+              current?.errors?.length === errors.length && 
+              current?.errors?.every((e, i) => e === errors[i])) {
+            console.log(`⏭️ Validación sin cambios para ${applicant.name}, skip update`)
+            return prev // No cambió, retornar el mismo objeto
+          }
+          console.log(`🔄 Actualizando validación para ${applicant.name}`)
+          return {
+            ...prev,
+            [applicant.id]: { isValid, errors }
+          }
+        })
+      }
+    })
+    
+    return handlers
+  }, [allApplicants])
+  
+  // Ref para rastrear los aplicantes que ya tienen validación inicializada
+  const initializedApplicants = useRef<Set<string>>(new Set())
+  
+  // Inicializar validaciones cuando se cargan las preguntas o cuando se agregan nuevos aplicantes
+  useEffect(() => {
+    if (hasLoaded && dynamicQuestions && dynamicQuestions.length > 0) {
+      const needsInitialization = allApplicants.filter(
+        applicant => !initializedApplicants.current.has(applicant.id)
+      )
+      
+      if (needsInitialization.length > 0) {
+        console.log('🔧 Inicializando validaciones para aplicantes:', needsInitialization.map(a => a.name))
+        
+        const newValidations: Record<string, { isValid: boolean; errors: string[] }> = {}
+        
+        needsInitialization.forEach(applicant => {
+          const responses = getApplicantResponses(applicant.id)
+          const hasAllResponses = responses.length >= dynamicQuestions.length
+          
+          newValidations[applicant.id] = {
+            isValid: hasAllResponses,
+            errors: hasAllResponses ? [] : [`${applicant.name} tiene preguntas sin responder`]
+          }
+          
+          // Marcar como inicializado
+          initializedApplicants.current.add(applicant.id)
+        })
+        
+        // Merge con validaciones existentes
+        setApplicantValidations(prev => ({
+          ...prev,
+          ...newValidations
+        }))
+      }
+    }
+  }, [hasLoaded, dynamicQuestions, allApplicants, getApplicantResponses])
+  
+  // Ref para evitar notificaciones redundantes al padre
+  const lastValidationNotification = useRef<{ isValid: boolean; errorsKey: string } | null>(null)
+  
+  // Verificar si todos los aplicantes tienen respuestas válidas
+  useEffect(() => {
+    // Si no hay preguntas dinámicas después de cargar, considerar como válido
+    if (hasLoaded && (!dynamicQuestions || dynamicQuestions.length === 0)) {
+      const shouldNotify = !lastValidationNotification.current || 
+        lastValidationNotification.current.isValid !== true ||
+        lastValidationNotification.current.errorsKey !== ''
+      
+      if (shouldNotify) {
+        console.log('✅ [Step1] No hay preguntas dinámicas, reportando como válido')
+        lastValidationNotification.current = { isValid: true, errorsKey: '' }
+        setIsFormValidForNext(true)
+        setValidationErrors([])
+        onValidationChange?.(true, [])
+      }
+      return
+    }
+    
+    // Si hay preguntas pero aún no se han cargado, reportar como INVÁLIDO
+    if (!hasLoaded) {
+      const shouldNotify = !lastValidationNotification.current || 
+        lastValidationNotification.current.isValid !== false
+      
+      if (shouldNotify) {
+        console.log('⏳ [Step1] Preguntas aún no cargadas, reportando como INVÁLIDO')
+        lastValidationNotification.current = { isValid: false, errorsKey: 'loading' }
+        setIsFormValidForNext(false)
+        setValidationErrors(['Cargando preguntas...'])
+        onValidationChange?.(false, ['Cargando preguntas...'])
+      }
+      return
+    }
+    
+    // Si no hay preguntas dinámicas (después de cargar), salir
+    if (!dynamicQuestions || dynamicQuestions.length === 0) {
+      return
+    }
+    
+    // Verificar validación de cada aplicante en detalle
+    const validationDetails = allApplicants.map(applicant => {
+      const validation = applicantValidations[applicant.id]
+      return {
+        id: applicant.id,
+        name: applicant.name,
+        hasValidation: !!validation,
+        isValid: validation?.isValid ?? false,
+        errors: validation?.errors || []
+      }
+    })
+    
+    // IMPORTANTE: Si algún aplicante no tiene validación inicializada, no se puede considerar válido
+    const allApplicantsHaveValidation = validationDetails.every(detail => detail.hasValidation)
+    const allValid = allApplicantsHaveValidation && validationDetails.every(detail => detail.isValid)
+    const allErrors = validationDetails.flatMap(detail => detail.errors)
+    
+    // Si faltan validaciones por inicializar, agregar error
+    if (!allApplicantsHaveValidation) {
+      allErrors.push('Algunas preguntas aún se están cargando...')
+    }
+    
+    const errorsKey = allErrors.join('|')
+    
+    console.log('🔍 [Step1] Validación de todos los aplicantes:', {
+      totalApplicants: allApplicants.length,
+      validationDetails,
+      allApplicantsHaveValidation,
+      allValid,
+      allErrors
+    })
+    
+    // Solo actualizar si algo cambió
+    const shouldNotify = !lastValidationNotification.current || 
+      lastValidationNotification.current.isValid !== allValid ||
+      lastValidationNotification.current.errorsKey !== errorsKey
+    
+    if (shouldNotify) {
+      console.log('📢 Notificando validación al padre:', { allValid, allErrors })
+      lastValidationNotification.current = { isValid: allValid, errorsKey }
+      setIsFormValidForNext(allValid)
+      setValidationErrors(allErrors)
+      onValidationChange?.(allValid, allErrors)
+    }
+  }, [applicantValidations, allApplicants, hasLoaded, dynamicQuestions, onValidationChange])
+  
+  // Handler para detectar respuestas knockout
   const handleKnockoutDetected = useCallback((hasKnockout: boolean, errors: string[]) => {
     if (hasKnockout) {
       toast.error('Respuesta descalificante detectada', {
@@ -336,31 +566,6 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
       })
     }
   }, [])
-
-  // Ref para evitar notificaciones repetidas de validación
-  const lastStepValidationRef = useRef<{ isValid: boolean; errors: string[] } | null>(null)
-
-  const handleValidateForNext = useCallback((isValid: boolean, errors: string[]) => {
-    const prev = lastStepValidationRef.current
-    const changed =
-      !prev ||
-      prev.isValid !== isValid ||
-      prev.errors.length !== errors.length ||
-      !prev.errors.every((e, i) => e === errors[i])
-
-    if (changed) {
-      lastStepValidationRef.current = { isValid, errors }
-      setIsFormValidForNext(isValid)
-      setValidationErrors(errors)
-      
-      console.log('Validación para Next:', { isValid, errors })
-      
-      // Notificar al componente padre
-      if (onValidationChange) {
-        onValidationChange(isValid, errors)
-      }
-    }
-  }, [onValidationChange])
 
   if (isLoading) {
     return (
@@ -479,92 +684,26 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
     )
   }
 
+  // Obtener el estado de validación de un aplicante
+  const getApplicantValidationStatus = (applicantId: string): 'complete' | 'incomplete' | 'pending' => {
+    const responses = getApplicantResponses(applicantId)
+    const validation = applicantValidations[applicantId]
+    
+    if (!validation) return 'pending'
+    if (validation.isValid && responses.length >= dynamicQuestions.filter(q => !q.condition).length) return 'complete'
+    return 'incomplete'
+  }
+
   return (
     <div className="space-y-6">
-    
-      {/* Debug components - siempre visibles para debugging 
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-        <strong>DEBUG:</strong> Step7DynamicQuestions se está cargando correctamente
-      </div>
-
-      
-      <div className="space-y-4">
-        <DebugCartPlans />
-        <DebugApplicationBundle
-          selectedPlans={formData.selectedPlans}
-          state={formData.state}
-          effectiveDate={formData.effectiveDate}
-          dateOfBirth={formData.dateOfBirth}
-        />
-        
-        <Card className="border-orange-300">
-          <CardHeader>
-            <CardTitle className="text-orange-700">🔧 Debug: Múltiples Planes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Button 
-                onClick={async () => {
-                  try {
-                    console.log('=== DEBUGGING CON TUS DATOS REALES ===')
-                    const debugData = {
-                      selectedPlans: formData.selectedPlans,
-                      state: formData.state || "CA",
-                      effectiveDate: formData.effectiveDate || "2025-11-25T00:00:00Z",
-                      dateOfBirth: formData.dateOfBirth || "2002-10-04"
-                    }
-                    console.log('Enviando datos reales:', debugData)
-                    
-                    const response = await fetch('/api/debug-application-bundle', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(debugData)
-                    })
-                    const data = await response.json()
-                    console.log('Resultado del debug:', data)
-                    alert(response.ok ? '✅ Debug exitoso - Revisa la consola' : `❌ Error: ${data.message}`)
-                  } catch (error) {
-                    console.error('Error en debug:', error)
-                    alert(`❌ Error: ${error}`)
-                  }
-                }}
-                className="bg-blue-500 hover:bg-blue-600"
-              >
-                Debug con Tus Datos
-              </Button>
-              
-              <Button 
-                onClick={async () => {
-                  try {
-                    console.log('Probando con datos de prueba...')
-                    const response = await fetch('/api/test-multiple-plans', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({})
-                    })
-                    const data = await response.json()
-                    console.log('Resultado del test:', data)
-                    alert(response.ok ? '✅ Test exitoso - Revisa la consola' : `❌ Error: ${data.message}`)
-                  } catch (error) {
-                    console.error('Error en test:', error)
-                    alert(`❌ Error: ${error}`)
-                  }
-                }}
-                className="bg-orange-500 hover:bg-orange-600"
-              >
-                Test con Datos de Prueba
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      */}
-
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Preguntas de Elegibilidad</h2>
           <p className="mt-2 text-gray-600">
-            Primero necesitamos hacer algunas preguntas para determinar tu elegibilidad para los planes seleccionados.
+            {allApplicants.length > 1 
+              ? `Por favor responda las preguntas de elegibilidad para cada uno de los ${allApplicants.length} aplicantes.`
+              : 'Primero necesitamos hacer algunas preguntas para determinar tu elegibilidad para los planes seleccionados.'
+            }
           </p>
         </div>
       </div>
@@ -572,18 +711,95 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
       <Alert className="border-yellow-200 bg-yellow-50">
         <AlertTriangle className="h-4 w-4 text-yellow-500" />
         <AlertDescription className="text-yellow-700">
-          <strong>Importante:</strong> Por favor responda todas las preguntas de elegibilidad con precisión.
+          <strong>Importante:</strong> Por favor responda todas las preguntas de elegibilidad con precisión para cada aplicante.
           La información incorrecta puede resultar en la denegación de reclamos o la cancelación de la póliza.
         </AlertDescription>
       </Alert>
 
-      <DynamicQuestionsForm
-        questions={dynamicQuestions}
-        initialResponses={formData.questionResponses}
-        onResponsesChange={handleResponsesChange}
-        onKnockoutDetected={handleKnockoutDetected}
-        onValidateForNext={handleValidateForNext}
-      />
+      {/* Mostrar resumen de aplicantes si hay más de uno */}
+      {allApplicants.length > 1 && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Users className="h-5 w-5 text-blue-600" />
+              <span className="font-semibold text-blue-900">Aplicantes ({allApplicants.length})</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {allApplicants.map(applicant => {
+                const status = getApplicantValidationStatus(applicant.id)
+                return (
+                  <Badge 
+                    key={applicant.id}
+                    variant={status === 'complete' ? 'default' : status === 'incomplete' ? 'destructive' : 'secondary'}
+                    className="cursor-pointer"
+                    onClick={() => setActiveApplicantTab(applicant.id)}
+                  >
+                    {applicant.isPrimary ? <User className="h-3 w-3 mr-1" /> : null}
+                    {applicant.name} ({applicant.relationship})
+                    {status === 'complete' && <CheckCircle className="h-3 w-3 ml-1" />}
+                    {status === 'incomplete' && <AlertTriangle className="h-3 w-3 ml-1" />}
+                  </Badge>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tabs para cada aplicante */}
+      <Tabs 
+        value={activeApplicantTab} 
+        onValueChange={(newTab) => {
+          console.log('🔄 [Tab Change]', { from: activeApplicantTab, to: newTab })
+          console.log('📊 [Tab Change] Validaciones actuales:', applicantValidations)
+          setActiveApplicantTab(newTab)
+        }} 
+        className="w-full"
+      >
+        <TabsList className={`grid w-full ${allApplicants.length === 1 ? 'grid-cols-1' : allApplicants.length === 2 ? 'grid-cols-2' : allApplicants.length === 3 ? 'grid-cols-3' : 'grid-cols-4'}`}>
+          {allApplicants.map(applicant => {
+            const status = getApplicantValidationStatus(applicant.id)
+            return (
+              <TabsTrigger 
+                key={applicant.id} 
+                value={applicant.id}
+                className="flex items-center gap-2"
+              >
+                {applicant.isPrimary ? <User className="h-4 w-4" /> : null}
+                <span className="truncate">{applicant.name}</span>
+                {status === 'complete' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                {status === 'incomplete' && <AlertTriangle className="h-4 w-4 text-orange-500" />}
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
+
+        {allApplicants.map(applicant => (
+          <TabsContent key={applicant.id} value={applicant.id} className="mt-6">
+            <Card className="border-gray-200">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  {applicant.isPrimary ? <User className="h-5 w-5 text-blue-600" /> : <Users className="h-5 w-5 text-green-600" />}
+                  Preguntas para {applicant.name}
+                  <Badge variant="outline" className="ml-2">
+                    {applicant.relationship}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DynamicQuestionsForm
+                  key={applicant.id}
+                  questions={dynamicQuestions}
+                  initialResponses={getApplicantResponses(applicant.id)}
+                  onResponsesChange={applicantResponsesHandlers[applicant.id]}
+                  onKnockoutDetected={handleKnockoutDetected}
+                  onValidateForNext={applicantValidateHandlers[applicant.id]}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ))}
+      </Tabs>
 
       {/* Mostrar advertencia si hay respuestas knockout */}
       {validation.knockoutAnswers && validation.knockoutAnswers.length > 0 && (
@@ -596,29 +812,32 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
         </Alert>
       )}
 
-      {/* Mostrar estado de validación para Next 
-      {validationErrors.length > 0 && (
-        <Alert className="border-orange-200 bg-orange-50">
-          <AlertTriangle className="h-4 w-4 text-orange-500" />
-          <AlertDescription className="text-orange-700">
-            <strong>Faltan preguntas por responder:</strong>
-            <ul className="mt-2 list-disc list-inside space-y-1">
-              {validationErrors.map((error, index) => (
-                <li key={index} className="text-sm">{error}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
-      */}
-
-
       {/* Indicador de validación completa */}
-      {isFormValidForNext && validationErrors.length === 0 && (
+      {isFormValidForNext && validationErrors.length === 0 && allApplicants.every(a => getApplicantValidationStatus(a.id) === 'complete') && (
         <Alert className="border-green-200 bg-green-50">
           <CheckCircle className="h-4 w-4 text-green-500" />
           <AlertDescription className="text-green-700">
-            <strong>¡Excelente!</strong> Todas las preguntas han sido respondidas. Puede continuar al siguiente paso.
+            <strong>¡Excelente!</strong> Todas las preguntas han sido respondidas para todos los aplicantes. Puede continuar al siguiente paso.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Indicador de aplicantes pendientes */}
+      {allApplicants.length > 1 && allApplicants.some(a => getApplicantValidationStatus(a.id) !== 'complete') && (
+        <Alert className="border-orange-200 bg-orange-50">
+          <AlertTriangle className="h-4 w-4 text-orange-500" />
+          <AlertDescription className="text-orange-700">
+            <strong>Pendiente:</strong> Los siguientes aplicantes aún tienen preguntas sin responder:
+            <ul className="mt-2 list-disc list-inside">
+              {allApplicants
+                .filter(a => getApplicantValidationStatus(a.id) !== 'complete')
+                .map(a => (
+                  <li key={a.id} className="cursor-pointer hover:underline" onClick={() => setActiveApplicantTab(a.id)}>
+                    {a.name} ({a.relationship})
+                  </li>
+                ))
+              }
+            </ul>
           </AlertDescription>
         </Alert>
       )}

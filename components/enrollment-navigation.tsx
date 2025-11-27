@@ -12,6 +12,7 @@ interface EnrollmentNavigationProps {
   onSubmit: () => void
   isSubmitting: boolean
   formData: EnrollmentFormState
+  isStep1Valid?: boolean
 }
 
 export function EnrollmentNavigation({
@@ -21,7 +22,8 @@ export function EnrollmentNavigation({
   onNext,
   onSubmit,
   isSubmitting,
-  formData
+  formData,
+  isStep1Valid = true
 }: EnrollmentNavigationProps) {
   return (
     <div className="flex justify-between items-center mt-8 pt-6 border-t">
@@ -46,6 +48,7 @@ export function EnrollmentNavigation({
           <Button
             onClick={onNext}
             size="lg"
+            disabled={currentStep === 1 && !isStep1Valid}
             className="rounded-full bg-cyan hover:bg-cyan/90 text-white px-8"
           >
             Next

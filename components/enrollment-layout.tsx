@@ -18,6 +18,8 @@ interface EnrollmentLayoutProps {
   onSubmit: () => void
   isSubmitting: boolean
   progress: number
+  onStep1ValidationChange?: (isValid: boolean, errors: string[]) => void
+  isStep1Valid?: boolean
 }
 
 export function EnrollmentLayout({
@@ -27,10 +29,12 @@ export function EnrollmentLayout({
   updateFormData,
   onNext,
   onBack,
+  isStep1Valid = true,
   onStepClick,
   onSubmit,
   isSubmitting,
-  progress
+  progress,
+  onStep1ValidationChange
 }: EnrollmentLayoutProps) {
   return (
     <div className="min-h-screen flex">
@@ -59,21 +63,22 @@ export function EnrollmentLayout({
           {/* Form Steps */}
           <div className="bg-white rounded-lg p-8 shadow-sm mb-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              {currentStep === 1 && "Account Details"}
-              {currentStep === 2 && "Health Information"}
-              {currentStep === 3 && "Address Information"}
-              {currentStep === 4 && "Additional Family Members"}
-              {currentStep === 5 && "Coverage Selection"}
-              {currentStep === 6 && "Beneficiaries"}
-              {currentStep === 7 && "Health Questions"}
+              {currentStep === 1 && "Questions"}
+              {currentStep === 2 && "Account Details "}
+              {currentStep === 3 && "Health Information "}
+              {currentStep === 4 && " Address Information "}
+              {currentStep === 5 && "Family Members" }
+              {currentStep === 6 && "Coverage Selection "}
+              {currentStep === 7 && "Beneficiaries"}
               {currentStep === 8 && "Payment Information"}
               {currentStep === 9 && "Review & Confirm"}
             </h2>
 
-            <EnrollmentForm 
+            <EnrollmentForm
               currentStep={currentStep}
               formData={formData}
               updateFormData={updateFormData}
+              onStep1ValidationChange={onStep1ValidationChange}
             />
 
             {/* Navigation Buttons */}
@@ -85,6 +90,7 @@ export function EnrollmentLayout({
               onSubmit={onSubmit}
               isSubmitting={isSubmitting}
               formData={formData}
+              isStep1Valid={isStep1Valid}
             />
           </div>
         </div>

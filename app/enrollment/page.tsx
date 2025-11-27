@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useCart } from "@/contexts/cart-context"
 import { useAuth } from "@/contexts/auth-context"
@@ -8,12 +8,11 @@ import { toast } from "sonner"
 import type { EnrollmentFormState } from "@/lib/types/enrollment"
 import { EnrollmentLayout } from "@/components/enrollment-layout"
 import { EnrollmentErrorNotification } from "@/components/enrollment-error-notification"
-import { updateUserProfile, updateApplicationWithApiResponse, recordEnrollmentStartAPI } from "@/lib/api/enrollment-db"
+import { updateUserProfile, recordEnrollmentStartAPI } from "@/lib/api/enrollment-db"
 import { splitPlansByCompany, evaluateMultiCarrierResults, getMultiCarrierMessage } from "@/lib/api/enrollment-split"
-import { getPaymentConfig, savePaymentTransaction } from "@/lib/api/insurance-config"
-import type { PaymentTransaction } from "@/lib/types/insurance-config"
-import { saveAllstateApiResponse } from "@/lib/api/carriers/allstate"
 import { createClient } from "@/lib/supabase/client"
+import { getFamilyMembers, familyMemberToApplicant } from "@/lib/api/family-members"
+import { recalculateQuotes } from "@/lib/utils/quote-calculator"
 
 const TOTAL_STEPS = 9
 
@@ -26,6 +25,16 @@ export default function EnrollmentPage() {
   const [isCartLoaded, setIsCartLoaded] = useState(false)
   const [enrollmentError, setEnrollmentError] = useState<any>(null)
   const [isEnrollmentComplete, setIsEnrollmentComplete] = useState(false)
+  const [isRecalculating, setIsRecalculating] = useState(false)
+  
+  // Estado para validación del paso 1 (preguntas de elegibilidad)
+  // Inicialmente false para deshabilitar el botón Next hasta que se validen las preguntas
+  // El componente Step1DynamicQuestions actualizará este estado cuando las preguntas se carguen y validen
+  const [step1Validation, setStep1Validation] = useState<{ isValid: boolean; errors: string[]; hasBeenValidated: boolean }>({
+    isValid: false,
+    errors: [],
+    hasBeenValidated: false
+  })
 
   // Form state
   const [formData, setFormData] = useState<EnrollmentFormState>({
@@ -140,6 +149,34 @@ export default function EnrollmentPage() {
           
           if (profileError) {
             console.error('❌ Error obteniendo perfil:', profileError)
+          }
+          
+          // Cargar family members
+          try {
+            console.log('🔍 Cargando family members...')
+            const familyMembers = await getFamilyMembers()
+            
+            if (familyMembers.length > 0) {
+              // Filtrar solo los miembros incluidos en la cotización
+              const activeMembers = familyMembers.filter(m => m.included_in_quote !== false)
+              console.log('✅ Family members encontrados:', familyMembers.length)
+              console.log('✅ Family members activos para enrollment:', activeMembers.length)
+              
+              // Convertir family members a formato Applicant
+              const additionalApplicants = activeMembers.map((member, index) => 
+                familyMemberToApplicant(member, index)
+              )
+              
+              setFormData(prev => ({
+                ...prev,
+                additionalApplicants
+              }))
+              
+              console.log('✅ Additional applicants pre-cargados desde family members')
+            }
+          } catch (familyError) {
+            console.error('❌ Error cargando family members:', familyError)
+            // No es un error crítico, continuar con el flujo
           }
           
           if (userProfile) {
@@ -264,10 +301,42 @@ export default function EnrollmentPage() {
   }
 
   // Validation functions for each step
+  // Handler para recibir el estado de validación del paso 1 (preguntas)
+  const handleStep1ValidationChange = useCallback((isValid: boolean, errors: string[]) => {
+    setStep1Validation({ isValid, errors, hasBeenValidated: true })
+  }, [])
+
   const validateStep = (step: number): { isValid: boolean; message?: string } => {
     switch (step) {
       case 1: // ApplicationBundle Questions (NUEVO)
-        // Las preguntas dinámicas se validan en el componente Step7DynamicQuestions
+        // Si aún no se ha validado (las preguntas no se han cargado), permitir avanzar
+        // El componente Step1DynamicQuestions notificará cuando las preguntas se carguen
+        if (!step1Validation.hasBeenValidated) {
+          // Las preguntas aún no se han cargado - esto podría ser el primer render
+          // Verificar si hay respuestas ya almacenadas
+          const hasResponses = formData.questionResponses && formData.questionResponses.length > 0
+          if (!hasResponses) {
+            return { 
+              isValid: false, 
+              message: 'Por favor espere a que las preguntas de elegibilidad se carguen y respóndalas todas' 
+            }
+          }
+        }
+        
+        // Validar que todas las preguntas estén respondidas para todos los aplicantes
+        if (!step1Validation.isValid) {
+          const applicantsCount = 1 + (formData.additionalApplicants?.length || 0)
+          if (applicantsCount > 1) {
+            return { 
+              isValid: false, 
+              message: `Por favor responda todas las preguntas de elegibilidad para los ${applicantsCount} aplicantes` 
+            }
+          }
+          return { 
+            isValid: false, 
+            message: 'Por favor responda todas las preguntas de elegibilidad antes de continuar' 
+          }
+        }
         return { isValid: true }
 
       case 2: // Personal Information (antes Paso 1)
@@ -363,7 +432,63 @@ export default function EnrollmentPage() {
     }
   }
 
-  const handleNext = () => {
+  const handleRecalculateQuotes = async () => {
+    setIsRecalculating(true)
+    try {
+      // Convertir additionalApplicants a formato FamilyMember para recalculateQuotes
+      const familyMembers = formData.additionalApplicants.map(app => ({
+        first_name: app.firstName,
+        last_name: app.lastName,
+        date_of_birth: app.dob, // Asumiendo que está en formato YYYY-MM-DD o ISO
+        gender: app.gender,
+        relationship: app.relationship,
+        smoker: app.smoker,
+        // Otros campos no críticos para cotización rápida
+      })) as any[]
+
+      // Datos base del aplicante principal
+      const baseData = {
+        zipCode: formData.zipCode,
+        dateOfBirth: formData.dateOfBirth,
+        gender: formData.gender,
+        smokes: formData.smoker,
+        coverageStartDate: formData.effectiveDate,
+        paymentFrequency: formData.paymentFrequency
+      }
+
+      console.log('🔄 Recalculando precios antes de ir a cobertura...')
+      const { updatedPlans, error } = await recalculateQuotes(baseData, familyMembers, formData.selectedPlans)
+
+      if (error) {
+        console.error('❌ Error al recalcular:', error)
+        toast.error('Could not update prices', { description: 'Proceeding with estimated prices.' })
+      } else {
+        // Actualizar planes en formData
+        let changesCount = 0
+        const newSelectedPlans = formData.selectedPlans.map(plan => {
+          const updated = updatedPlans.find(p => p.id === plan.id)
+          if (updated && updated.price !== plan.price) {
+            changesCount++
+            return updated
+          }
+          return plan
+        })
+
+        if (changesCount > 0) {
+          updateFormData('selectedPlans', newSelectedPlans)
+          toast.success('Prices updated', { 
+            description: `Prices adjusted for ${changesCount} plans based on family members.` 
+          })
+        }
+      }
+    } catch (err) {
+      console.error('❌ Error inesperado al recalcular:', err)
+    } finally {
+      setIsRecalculating(false)
+    }
+  }
+
+  const handleNext = async () => {
     const validation = validateStep(currentStep)
 
     if (!validation.isValid) {
@@ -372,6 +497,13 @@ export default function EnrollmentPage() {
         duration: 4000,
       })
       return
+    }
+
+    // Si estamos en el paso 5 (Additional Applicants) y vamos al 6 (Coverage), recalcular precios
+    if (currentStep === 5) {
+      // Recalcular precios usando los aplicantes definidos en el formulario
+      // En este paso, los 'additionalApplicants' son los que el usuario ha confirmado
+      await handleRecalculateQuotes()
     }
 
     if (currentStep < TOTAL_STEPS) {
@@ -473,231 +605,18 @@ export default function EnrollmentPage() {
             console.error('❌ Error registrando inicio de enrollment:', historyError)
           }
           
-          // 4b. Construir payment data (SIN tokenización por ahora)
-          const paymentData = formData.paymentMethod === 'credit_card' ? {
-            accountHolderFirstName: formData.accountHolderFirstName,
-            accountHolderLastName: formData.accountHolderLastName,
-            creditCardNumber: formData.creditCardNumber,
-            expirationMonth: formData.expirationMonth,
-            expirationYear: formData.expirationYear,
-            cvv: formData.cvv,
-            cardBrand: formData.cardBrand,
-            cardToken: null
-          } : {
-            accountHolderFirstName: formData.accountHolderFirstName,
-            accountHolderLastName: formData.accountHolderLastName,
-            routingNumber: formData.routingNumber,
-            accountNumber: formData.accountNumber,
-            accountType: formData.accountType,
-            bankName: formData.bankName,
-            cardToken: null
-          }
+          // NOTA: Ya no enviamos a la API de la aseguradora desde aquí
+          // El enrollment se guarda en estado 'pending_approval' para revisión manual
+          // Un admin/agent lo enviará manualmente desde el dashboard de administración
+          console.log(`✅ Enrollment guardado en estado 'pending_approval' para ${companyData.company_slug}`)
           
-          // 4c. Enviar a API (pero no fallar si hay error)
-          const enrollmentRequest = {
-            ...buildEnrollmentRequest(formData),
-            coverages: companyData.plans.map(plan => ({
-              planKey: plan.planKey,
-              monthlyPremium: plan.price,
-              effectiveDate: formData.effectiveDate,
-              paymentFrequency: formData.paymentFrequency
-            })),
-            paymentInformation: paymentData
-          }
-          
-          console.log(`🚀 Enviando a API de ${companyData.company_slug}...`)
-          let apiResponse, apiResult, apiSuccess = false
-          try {
-            apiResponse = await fetch('/api/enrollment', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(enrollmentRequest)
-            })
-            
-            console.log(`📡 Response status: ${apiResponse.status} ${apiResponse.statusText}`)
-            
-            apiResult = await apiResponse.json()
-            console.log(`📋 API Result:`, apiResult)
-            
-            // La API puede devolver success: false pero el enrollment se guardó correctamente
-            // Consideramos exitoso si no hay error de conexión y tenemos respuesta
-            // Los errores de configuración de plan no son fallos críticos
-            const isPlanConfigError = apiResult.data?.isPlanConfigurationError
-            const isTestDataError = apiResult.data?.isTestData || apiResult.data?.requiresRealData
-            const isValidationError = apiResult.data?.isValidationError
-            const hasApiResponse = apiResult && (apiResult.success !== undefined || apiResult.data || apiResult.message)
-            
-            // Considerar exitoso si:
-            // 1. La respuesta es OK (200)
-            // 2. O es un error de configuración de plan (el enrollment se guardó pero el plan tiene problemas)
-            // 3. O es un error de datos de prueba (el enrollment se guardó pero Allstate rechaza datos de prueba)
-            apiSuccess = (apiResponse.ok && hasApiResponse) || isPlanConfigError || isTestDataError
-            
-            if (apiSuccess) {
-              if (isPlanConfigError) {
-                console.log(`⚠️ API de ${companyData.company_slug} con advertencia de configuración:`, apiResult)
-                toast.warning('Enrollment guardado con advertencias', {
-                  description: 'Tu solicitud se guardó correctamente, pero el plan seleccionado tiene problemas de configuración en el sistema de la aseguradora.',
-                  duration: 6000
-                })
-              } else if (isTestDataError) {
-                console.log(`⚠️ API de ${companyData.company_slug} rechazó datos de prueba:`, apiResult)
-                toast.warning('Enrollment guardado (datos de prueba)', {
-                  description: 'Tu solicitud se guardó correctamente. La aseguradora rechazó los datos de prueba, pero tu enrollment está registrado.',
-                  duration: 6000
-                })
-              } else {
-                console.log(`✅ API de ${companyData.company_slug} exitosa:`, apiResult)
-              }
-            } else {
-              console.log(`❌ API de ${companyData.company_slug} falló:`, apiResult)
-              console.log(`❌ Error details:`, {
-                status: apiResponse.status,
-                statusText: apiResponse.statusText,
-                error: apiResult.error,
-                message: apiResult.message,
-                details: apiResult.details
-              })
-            }
-          } catch (apiError) {
-            console.log(`❌ Error en API de ${companyData.company_slug}:`, apiError)
-            apiSuccess = false
-            const normalizedError = apiError instanceof Error ? apiError : new Error(String(apiError))
-            apiResult = { error: normalizedError.message }
-          }
-          
-          // 4d. Guardar transacción (opcional, no fallar si hay error)
-          try {
-            // Obtener el UUID de la aseguradora Allstate
-            const supabase = createClient()
-            const allstateCompany = await supabase
-              .from('insurance_companies')
-              .select('id')
-              .eq('slug', 'allstate')
-              .single()
-            
-            console.log('🔍 Allstate company lookup:', allstateCompany)
-            
-            if (allstateCompany.error || !allstateCompany.data) {
-              console.warn('⚠️ Allstate company not found, saltando payment transaction:', allstateCompany.error)
-            } else {
-              // Mapear payment_frequency a valores válidos de la tabla
-              const validPaymentFrequencies = {
-                Monthly: 'Monthly',
-                Quarterly: 'Quarterly',
-                SemiAnnual: 'SemiAnnual',
-                Annual: 'Annual',
-                SinglePayment: 'SinglePayment',
-                None: 'None',
-              } as const
-
-              const paymentFrequencyKey = (formData.paymentFrequency || 'Monthly') as keyof typeof validPaymentFrequencies
-              const mappedFrequency = validPaymentFrequencies[paymentFrequencyKey] ?? 'Monthly'
-              const transactionStatus: PaymentTransaction['transaction_status'] = apiSuccess ? 'completed' : 'failed'
-
-              const paymentTransactionData: Omit<PaymentTransaction, 'id' | 'created_at' | 'updated_at'> = {
-                application_id: applicationId,
-                company_id: allstateCompany.data.id,
-                transaction_status: transactionStatus,
-                amount: Number(companyData.amount), // Asegurar que sea número
-                currency: 'USD',
-                payment_method: formData.paymentMethod === 'bank_account' ? 'ach' : 'credit_card',
-                payment_frequency: mappedFrequency,
-                next_payment_date: calculateNextPaymentDate(mappedFrequency, formData.effectiveDate),
-                payment_schedule: generatePaymentSchedule(mappedFrequency, formData.effectiveDate, companyData.amount),
-                // Solo información de historial, sin datos sensibles
-                payment_method_info: {
-                  ...(formData.paymentMethod === 'credit_card'
-                    ? {
-                        brand: formData.cardBrand || undefined,
-                        last4: formData.creditCardNumber ? formData.creditCardNumber.slice(-4) : undefined,
-                      }
-                    : {
-                        account_type: formData.accountType,
-                        last4: formData.accountNumber ? formData.accountNumber.slice(-4) : undefined,
-                      }),
-                },
-                processor_response: apiSuccess ? apiResult : null,
-                processor_error: apiSuccess ? null : apiResult
-              }
-              
-              console.log('🔍 Datos de payment transaction a enviar:', paymentTransactionData)
-              await savePaymentTransaction(paymentTransactionData)
-              console.log(`✅ Payment transaction guardada para ${companyData.company_slug}`)
-            }
-          } catch (paymentError) {
-            console.warn('⚠️ Error guardando payment transaction (no crítico):', paymentError)
-          }
-          
-          // 4e. Guardar respuesta completa de Allstate (siempre que tengamos respuesta)
-          if (apiResult) {
-            console.log(`💾 Guardando respuesta completa de ${companyData.company_slug}...`)
-            try {
-              await saveAllstateApiResponse(applicationId, apiResult)
-              console.log(`✅ Respuesta de ${companyData.company_slug} guardada en BD`)
-            } catch (responseError) {
-              console.warn('⚠️ Error guardando respuesta de Allstate (no crítico):', responseError)
-            }
-          }
-          
-          // 4f. Actualizar estado de la aplicación
-          // IMPORTANTE: Si llegamos aquí, significa que los datos se guardaron en la BD (paso 4b)
-          // Por lo tanto, consideramos el enrollment exitoso aunque la API de Allstate falle
-          // porque lo importante es que tenemos el registro del enrollment del usuario
-          
-          const dbSaveSuccess = !!applicationId // Si tenemos applicationId, se guardó en BD
-          
-          if (apiSuccess) {
-            // API de Allstate respondió correctamente
-            await updateApplicationWithApiResponse(
-              applicationId,
-              apiResult.data,
-              null,
-              'submitted'
-            )
-            results.push({ 
-              company: companyData.company_slug, 
-              success: true,
-              application_id: applicationId
-            })
-            console.log(`✅ ${companyData.company_slug} procesado exitosamente`)
-          } else if (dbSaveSuccess) {
-            // API de Allstate falló PERO los datos se guardaron en nuestra BD
-            // Guardamos el error de la API pero marcamos como exitoso para el usuario
-            await updateApplicationWithApiResponse(
-              applicationId,
-              null,
-              apiResult,
-              'pending_approval' // Cambiamos a 'pending_approval' en lugar de 'submission_failed'
-            )
-            results.push({ 
-              company: companyData.company_slug, 
-              success: true, // Marcamos como exitoso porque se guardó en BD
-              application_id: applicationId
-            })
-            console.log(`⚠️ ${companyData.company_slug} - API falló pero enrollment guardado en BD`)
-            
-            // Mostrar advertencia al usuario
-            toast.warning('Enrollment guardado correctamente', {
-              description: 'Tu solicitud fue guardada exitosamente. La comunicación con la aseguradora está temporalmente no disponible, pero procesaremos tu solicitud.',
-              duration: 8000
-            })
-          } else {
-            // Ni la API ni la BD funcionaron (esto no debería pasar si llegamos aquí)
-            await updateApplicationWithApiResponse(
-              applicationId,
-              null,
-              apiResult,
-              'submission_failed'
-            )
-            results.push({ 
-              company: companyData.company_slug, 
-              success: false, 
-              error: apiResult,
-              application_id: applicationId
-            })
-            console.log(`❌ ${companyData.company_slug} falló completamente:`, apiResult)
-          }
+          // Agregar resultado exitoso
+          results.push({ 
+            company: companyData.company_slug, 
+            success: true,
+            application_id: applicationId
+          })
+          console.log(`✅ ${companyData.company_slug} guardado exitosamente para revisión`)
           
         } catch (error) {
           console.error(`❌ Error procesando ${companyData.company_slug}:`, error)
@@ -944,99 +863,171 @@ export default function EnrollmentPage() {
     return errors
   }
 
-  const buildEnrollmentRequest = (data: EnrollmentFormState) => {
+  // Función para limpiar objetos eliminando undefined/null (pero NO strings vacíos)
+  const cleanObject = (obj: any): any => {
+    if (Array.isArray(obj)) {
+      return obj.map(item => cleanObject(item))
+    }
+    if (obj !== null && typeof obj === 'object') {
+      return Object.fromEntries(
+        Object.entries(obj)
+          .filter(([_, v]) => v !== undefined && v !== null)
+          .map(([k, v]) => [k, cleanObject(v)])
+      )
+    }
+    return obj
+  }
+
+  const buildEnrollmentRequest = (data: EnrollmentFormState, companySlug?: string, plans?: any[]) => {
+    const plansToUse = plans || data.selectedPlans
     console.log('🔍 buildEnrollmentRequest - data.selectedPlans:', data.selectedPlans)
+    console.log('🔍 buildEnrollmentRequest - plansToUse:', plansToUse)
     console.log('🔍 buildEnrollmentRequest - cartItems:', cartItems)
+    console.log('🔍 buildEnrollmentRequest - companySlug:', companySlug)
     
     // Get client IP (in production, this should be done server-side)
     const clientIP = "0.0.0.0" // Placeholder
+    
+    // Determinar si es Allstate para aplicar estructura específica
+    const isAllstate = companySlug === 'allstate' || !companySlug // Si no se especifica, asumir Allstate por compatibilidad
 
-    const enrollmentRequest = {
-      demographics: {
-        zipCode: data.zipCode,
-        email: data.email,
-        address1: data.address1,
-        address2: data.address2,
-        city: data.city,
-        state: data.state,
-        phone: data.phone,
-        alternatePhone: data.alternatePhone,
-        zipCodePlus4: data.zipCodePlus4,
-        isEFulfillment: data.isEFulfillment,
-        applicants: [
-          {
-            applicantId: "primary-001",  // AGREGAR
-            firstName: data.firstName,
-            middleInitial: data.middleInitial,
-            lastName: data.lastName,
-            gender: data.gender,
-            dob: new Date(data.dateOfBirth).toISOString(),
-            smoker: data.smoker,
-              relationship: data.relationship === 'Self' ? 'Primary' : data.relationship,
-            ssn: data.ssn,
-            weight: Number(data.weight),
-            heightFeet: Number(data.heightFeet),
-            heightInches: Number(data.heightInches),
-            dateLastSmoked: data.dateLastSmoked ? new Date(data.dateLastSmoked).toISOString() : undefined,
-            hasPriorCoverage: data.hasPriorCoverage,
-            eligibleRateTier: "Standard",
-            quotedRateTier: "Standard",
-            phoneNumbers: [{  // AGREGAR
-              phoneNumber: data.phone,
-              phoneType: "Mobile",
-              allowTextMessaging: true,
-              allowServiceCalls: true
-            }],
-            ...(data.hasMedicare && {
-              medSuppInfo: {
-                medicarePartAEffectiveDate: data.medicarePartAEffectiveDate ? new Date(data.medicarePartAEffectiveDate).toISOString() : undefined,
-                medicarePartBEffectiveDate: data.medicarePartBEffectiveDate ? new Date(data.medicarePartBEffectiveDate).toISOString() : undefined,
-                medicareId: data.medicareId,
-                isPreMACRAEligible: data.isPreMACRAEligible
-              }
-            }),
-            medications: data.medications,
-            questionResponses: data.questionResponses
-          },
-          ...data.additionalApplicants.map((app, index) => ({
-            ...app,
-            applicantId: `additional-${String(index + 1).padStart(3, '0')}`,  // AGREGAR
-            dob: new Date(app.dob).toISOString(),
-            dateLastSmoked: app.dateLastSmoked ? new Date(app.dateLastSmoked).toISOString() : undefined
-          }))
-        ]
+    // Construir applicants base
+    // Para Allstate, questionResponses es REQUERIDO para TODOS los applicants
+    const primaryQuestionResponses = data.questionResponses && data.questionResponses.length > 0 
+      ? data.questionResponses 
+      : []
+    
+    const allApplicants = [
+      {
+        applicantId: "primary-001",
+        firstName: data.firstName,
+        lastName: data.lastName,
+        gender: data.gender,
+        dob: new Date(data.dateOfBirth).toISOString(),
+        smoker: data.smoker,
+        relationship: data.relationship === 'Self' ? 'Primary' : data.relationship,
+        ssn: data.ssn,
+        weight: Number(data.weight),
+        heightFeet: Number(data.heightFeet),
+        heightInches: Number(data.heightInches),
+        phoneNumbers: [{
+          phoneNumber: data.phone,
+          phoneType: "Mobile",
+          allowTextMessaging: true,
+          allowServiceCalls: true
+        }],
+        questionResponses: primaryQuestionResponses
       },
-      coverages: data.selectedPlans.map(plan => {
-        console.log('🔍 Plan data for coverage:', {
-          id: plan.id,
-          planKey: plan.planKey,
-          name: plan.name,
-          price: plan.price,
-          carrierName: plan.carrierName,
-          productCode: plan.productCode,
-          planType: plan.planType
-        })
+      ...data.additionalApplicants.map((app, index) => {
+        // Para additional applicants, usar sus questionResponses o copiar del primary
+        const appQuestionResponses = app.questionResponses && app.questionResponses.length > 0 
+          ? app.questionResponses 
+          : primaryQuestionResponses // Usar los del primary como fallback
         
         return {
-          planKey: plan.planKey || plan.productCode || plan.id, // Usar planKey, productCode o id como fallback
+          applicantId: `additional-${String(index + 1).padStart(3, '0')}`,
+          firstName: app.firstName,
+          lastName: app.lastName,
+          gender: app.gender,
+          dob: new Date(app.dob).toISOString(),
+          smoker: app.smoker,
+          relationship: app.relationship,
+          ssn: app.ssn,
+          weight: Number(app.weight),
+          heightFeet: Number(app.heightFeet),
+          heightInches: Number(app.heightInches),
+          phoneNumbers: app.phoneNumbers || [{
+            phoneNumber: app.phone || data.phone,
+            phoneType: app.relationship === 'Dependent' ? 'Home' : 'Mobile',
+            allowTextMessaging: app.relationship !== 'Dependent',
+            allowServiceCalls: true
+          }],
+          questionResponses: appQuestionResponses
+        }
+      })
+    ]
+
+    // Construir demographics según carrier
+    // Para Allstate: orden exacto según estructura esperada
+    const demographics = isAllstate ? {
+      zipCode: data.zipCode,
+      email: data.email,
+      address1: data.address1,
+      city: data.city,
+      state: data.state,
+      phone: data.phone,
+      applicants: allApplicants,
+      isEFulfillment: true
+    } : {
+      zipCode: data.zipCode,
+      email: data.email,
+      address1: data.address1,
+      address2: data.address2,
+      city: data.city,
+      state: data.state,
+      phone: data.phone,
+      alternatePhone: data.alternatePhone,
+      zipCodePlus4: data.zipCodePlus4,
+      isEFulfillment: data.isEFulfillment,
+      applicants: allApplicants.map(app => ({
+        ...app,
+        middleInitial: app.middleInitial,
+        dateLastSmoked: app.dateLastSmoked ? new Date(app.dateLastSmoked).toISOString() : undefined,
+        hasPriorCoverage: app.hasPriorCoverage,
+        eligibleRateTier: app.eligibleRateTier || "Standard",
+        quotedRateTier: app.quotedRateTier || "Standard",
+        medications: app.medications,
+        ...(app.medSuppInfo && { medSuppInfo: app.medSuppInfo })
+      }))
+    }
+
+    // Construir coverages según carrier
+    const coverages = plansToUse.map(plan => {
+      console.log('🔍 Plan data for coverage:', {
+        id: plan.id,
+        planKey: plan.planKey,
+        name: plan.name,
+        price: plan.price,
+        carrierName: plan.carrierName,
+        productCode: plan.productCode,
+        planType: plan.planType
+      })
+      
+      if (isAllstate) {
+        // Estructura específica para Allstate
+        // Formatear effectiveDate como YYYY-MM-DD (no ISO completo)
+        const effectiveDate = new Date(data.effectiveDate)
+        const formattedEffectiveDate = `${effectiveDate.getFullYear()}-${String(effectiveDate.getMonth() + 1).padStart(2, '0')}-${String(effectiveDate.getDate()).padStart(2, '0')}`
+        
+        return {
+          planKey: plan.planKey || plan.productCode || plan.id,
+          monthlyPremium: plan.price,
+          effectiveDate: formattedEffectiveDate,
+          paymentFrequency: data.paymentFrequency,
+          applicants: allApplicants.map(app => ({
+            applicantId: app.applicantId,
+            eligibleRateTier: "Standard"
+          }))
+        }
+      } else {
+        // Estructura genérica para otros carriers
+        return {
+          planKey: plan.planKey || plan.productCode || plan.id,
           effectiveDate: new Date(data.effectiveDate).toISOString(),
           monthlyPremium: plan.price,
           paymentFrequency: data.paymentFrequency,
-          carrierName: plan.carrierName || "All State", // Valor por defecto
+          carrierName: plan.carrierName || "All State",
           agentNumber: process.env.NEXT_PUBLIC_AGENT_NUMBER || "159208",
-          // Campos adicionales que podrían ser necesarios
           planType: plan.planType,
           productType: plan.productType,
           isAutomaticLoanProvisionOptedIn: data.isAutomaticLoanProvisionOptedIn,
           applicants: [
             {
               applicantId: "primary-001"
-              // REMOVED: hasPriorCoverage, questionResponses, eligibleRateTier, quotedRateTier 
-              // (should only be in demographics.applicants)
             }
           ],
           beneficiaries: data.beneficiaries.map((ben, index) => ({
-            beneficiaryId: index + 1,  // AGREGAR
+            beneficiaryId: index + 1,
             firstName: ben.firstName,
             middleName: ben.middleName,
             lastName: ben.lastName,
@@ -1047,44 +1038,80 @@ export default function EnrollmentPage() {
             phoneNumbers: ben.phoneNumbers
           }))
         }
+      }
+    })
+
+    // Construir paymentInformation según carrier
+    const paymentInformation = isAllstate ? {
+      accountHolderFirstName: data.accountHolderFirstName,
+      accountHolderLastName: data.accountHolderLastName,
+      accountType: data.paymentMethod === 'credit_card' ? 'CreditCard' : 'ACH',
+      ...(data.paymentMethod === 'credit_card' ? {
+        creditCardNumber: data.creditCardNumber,
+        expirationMonth: Number(data.expirationMonth),
+        expirationYear: Number(data.expirationYear),
+        cvv: data.cvv,
+        cardBrand: data.cardBrand
+      } : {
+        routingNumber: data.routingNumber,
+        accountNumber: data.accountNumber,
+        bankName: data.bankName,
+        accountTypeBank: data.accountType === 'checking' ? 'checking' : 'savings',
+        bankDraft: data.accountType === 'checking' ? 'Checking' : 'Savings',
+        desiredDraftDate: Number(data.desiredDraftDate)
+      })
+    } : {
+      accountType: data.paymentMethod === 'credit_card' ? 'CreditCard' : 'ACH',
+      accountHolderFirstName: data.accountHolderFirstName,
+      accountHolderLastName: data.accountHolderLastName,
+      ...(data.paymentMethod === 'credit_card' ? {
+        creditCardNumber: data.creditCardNumber,
+        expirationMonth: Number(data.expirationMonth),
+        expirationYear: Number(data.expirationYear),
+        cvv: data.cvv,
+        cardBrand: data.cardBrand
+      } : {
+        routingNumber: data.routingNumber,
+        accountNumber: data.accountNumber,
+        bankName: data.bankName,
+        bankDraft: data.accountType === 'checking' ? 'Checking' : 'Savings',
+        desiredDraftDate: Number(data.desiredDraftDate)
       }),
-      paymentInformation: {
-        accountType: data.paymentMethod === 'credit_card' ? 'CreditCard' : 'ACH',  // AGREGAR
-        accountHolderFirstName: data.accountHolderFirstName,
-        accountHolderLastName: data.accountHolderLastName,
-        ...(data.paymentMethod === 'credit_card' ? {
-          creditCardNumber: data.creditCardNumber,
-          expirationMonth: Number(data.expirationMonth),
-          expirationYear: Number(data.expirationYear),
-          cvv: data.cvv,
-          cardBrand: data.cardBrand
-        } : {
-          routingNumber: data.routingNumber,
-          accountNumber: data.accountNumber,
-          bankName: data.bankName,
-          bankDraft: data.accountType === 'checking' ? 'Checking' : 'Savings',
-          desiredDraftDate: Number(data.desiredDraftDate)
-        }),
-        isSubmitWithoutPayment: data.submitWithoutPayment
-      },
-      partnerInformation: {
-        agentNumber: process.env.NEXT_PUBLIC_AGENT_NUMBER || "159208",
-        clientIPAddress: clientIP
-      },
+      isSubmitWithoutPayment: data.submitWithoutPayment
+    }
+
+    // Construir partnerInformation según carrier
+    const partnerInformation = isAllstate ? {
+      agentNumber: process.env.NEXT_PUBLIC_AGENT_NUMBER || "159208",
+      clientCaseID: `CASE_${Date.now()}`
+    } : {
+      agentNumber: process.env.NEXT_PUBLIC_AGENT_NUMBER || "159208",
+      clientIPAddress: clientIP
+    }
+
+    const enrollmentRequest = {
+      demographics,
+      coverages,
+      paymentInformation,
+      partnerInformation,
       attestationInformation: {
-        referenceId: `APP-${Date.now()}`,  // AGREGAR
+        referenceId: `APP-${Date.now()}`,
         dateCollected: new Date().toISOString(),
-        type: "ApplicantEsign",  // CAMBIAR
-        value: data.signature,
+        type: "ApplicantEsign",
+        value: data.signature || "",
         clientIPAddress: clientIP
       },
       enrollmentDate: new Date().toISOString()
     }
     
-    // Log del objeto final de coverages antes de retornar
-    console.log('🔍 Final coverages object:', enrollmentRequest.coverages)
+    // Limpiar el objeto de campos undefined/null
+    const cleanedRequest = cleanObject(enrollmentRequest)
     
-    return enrollmentRequest
+    // Log del objeto final de coverages antes de retornar
+    console.log('🔍 Final coverages object:', cleanedRequest.coverages)
+    console.log('🔍 Enrollment request structure for:', isAllstate ? 'Allstate' : companySlug || 'default')
+    
+    return cleanedRequest
   }
 
   const progress = (currentStep / TOTAL_STEPS) * 100
@@ -1113,8 +1140,10 @@ export default function EnrollmentPage() {
         onBack={handleBack}
         onStepClick={handleStepClick}
         onSubmit={handleSubmit}
-        isSubmitting={isSubmitting}
+        isSubmitting={isSubmitting || isRecalculating}
         progress={progress}
+        onStep1ValidationChange={handleStep1ValidationChange}
+        isStep1Valid={step1Validation.isValid}
       />
     </>
   )

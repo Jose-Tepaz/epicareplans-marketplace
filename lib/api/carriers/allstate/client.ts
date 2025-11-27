@@ -19,36 +19,69 @@ class AllstateAPI {
     this.agentId = process.env.ALLSTATE_AGENT_ID || '159208'
   }
 
-  buildQuoteRequest(formData: InsuranceFormData): AllstateQuoteRequest {
+  buildQuoteRequest(formData: InsuranceFormData & { dependents?: any[] }): AllstateQuoteRequest {
     const effectiveDate = new Date(formData.coverageStartDate).toISOString()
     const birthDate = new Date(formData.dateOfBirth).toISOString()
 
+    // Primary applicant structure matching the user's example
+    const applicants: any[] = [
+      {
+        birthDate,
+        gender:
+          formData.gender === 'male'
+            ? 'Male'
+            : formData.gender === 'female'
+            ? 'Female'
+            : 'Male',
+        relationshipType: 'Primary',
+        isSmoker: formData.smokes,
+        hasPriorCoverage: false,
+        rateTier: 'Standard',
+        memberId: 'primary-001',
+        ...(formData.smokes &&
+          formData.lastTobaccoUse && {
+            dateLastSmoked: new Date(formData.lastTobaccoUse).toISOString(),
+          }),
+      },
+    ]
+
+    // Add dependents if present
+    if (formData.dependents && Array.isArray(formData.dependents)) {
+      formData.dependents.forEach((dep, index) => {
+        // Support both camelCase and snake_case for dateOfBirth
+        const dobString = dep.dateOfBirth || dep.date_of_birth
+        
+        if (dobString) {
+          try {
+            const depBirthDate = new Date(dobString).toISOString()
+            applicants.push({
+              birthDate: depBirthDate,
+              gender:
+                dep.gender === 'Male' || dep.gender === 'male' ? 'Male' : 'Female',
+              // Map relationship to Allstate accepted values: None, Primary, Spouse, Dependent
+              relationshipType: dep.relationship === 'Spouse' ? 'Spouse' : 'Dependent',
+              isSmoker: dep.smoker || false,
+              hasPriorCoverage: false,
+              rateTier: 'Standard',
+              memberId: `additional-${String(index + 1).padStart(3, '0')}`
+            })
+          } catch (e) {
+            console.warn('Skipping invalid dependent date of birth:', dobString)
+          }
+        }
+      })
+    }
+
+    // Construct the payload exactly as requested, removing extra fields
+    // Note: 'productTypes' was removed as it wasn't in the user's example
+    // Note: 'PlansToRate' and 'ExcludeAvailablePlans' were removed
     return {
-      PlansToRate: null,
-      ExcludeAvailablePlans: false,
       agentId: this.agentId,
       effectiveDate,
       zipCode: formData.zipCode,
-      applicants: [
-        {
-          birthDate,
-          gender:
-            formData.gender === 'male'
-              ? 'Male'
-              : formData.gender === 'female'
-              ? 'Female'
-              : 'Male',
-          relationshipType: 'Primary',
-          isSmoker: formData.smokes,
-          ...(formData.smokes &&
-            formData.lastTobaccoUse && {
-              dateLastSmoked: new Date(formData.lastTobaccoUse).toISOString(),
-            }),
-        },
-      ],
-      paymentFrequency: this.mapPaymentFrequency(formData.paymentFrequency),
-      productTypes: ['NHICSupplemental'],
-    }
+      applicants,
+      paymentFrequency: this.mapPaymentFrequency(formData.paymentFrequency)
+    } as unknown as AllstateQuoteRequest // Type assertion to bypass strict type checks if interface differs
   }
 
   private mapPaymentFrequency(
@@ -85,10 +118,23 @@ class AllstateAPI {
     }
 
     return plansArray.map<AllstateMappedPlan>((plan) => {
+      // Determine price from available fields
+      // Prioritize totalRate > rate > insuranceRate > monthlyPremium
+      const rawPrice = plan.totalRate || plan.rate || plan.insuranceRate || plan.monthlyPremium || 0
+      const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(rawPrice) || 0
+
+      if (price === 0) {
+        console.warn('Plan with 0 price detected:', { 
+          name: plan.planName, 
+          id: plan.id, 
+          raw: plan 
+        })
+      }
+
       const mappedPlan: AllstateMappedPlan = {
         id: plan.id || 'unknown',
         name: plan.planName || 'Unknown Plan',
-        price: plan.insuranceRate || 0,
+        price,
         coverage: plan.benefitDescription || 'No coverage description',
         productType: plan.productType || 'Unknown',
         benefits: Array.isArray(plan.benefits)
@@ -108,7 +154,7 @@ class AllstateAPI {
     })
   }
 
-  async getInsuranceQuotes(formData: InsuranceFormData): Promise<InsurancePlan[]> {
+  async getInsuranceQuotes(formData: InsuranceFormData & { dependents?: any[] }): Promise<InsurancePlan[]> {
     const requestData = this.buildQuoteRequest(formData)
 
     console.log('Sending request to Allstate API:', {
@@ -180,4 +226,3 @@ class AllstateAPI {
 }
 
 export const allstateAPI = new AllstateAPI()
-

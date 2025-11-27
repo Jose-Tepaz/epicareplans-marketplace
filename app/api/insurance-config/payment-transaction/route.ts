@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data)
   } catch (error) {
     console.error('❌ Error in payment-transaction API:', error)
-    return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error', details: (error as Error).message || 'Unknown error' }, { status: 500 })
   }
 }
 

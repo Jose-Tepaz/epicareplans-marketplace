@@ -16,6 +16,7 @@ interface CartContextType {
   items: InsurancePlan[]
   addItem: (plan: InsurancePlan) => void
   removeItem: (planId: string) => void
+  updateItem: (planId: string, updates: Partial<InsurancePlan>) => void
   clearCart: () => void
   isInCart: (planId: string) => boolean
   totalItems: number
@@ -78,6 +79,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
+  const updateItem = (planId: string, updates: Partial<InsurancePlan>) => {
+    setItems((prevItems) => {
+      const updatedItems = prevItems.map((item) => {
+        if (item.id === planId) {
+          console.log(`Updating plan ${planId}:`, updates)
+          return { ...item, ...updates }
+        }
+        return item
+      })
+      return updatedItems
+    })
+  }
+
   const clearCart = () => {
     setItems([])
     localStorage.removeItem('insuranceCart')
@@ -98,6 +112,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         items,
         addItem,
         removeItem,
+        updateItem,
         clearCart,
         isInCart,
         totalItems,

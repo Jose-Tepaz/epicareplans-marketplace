@@ -49,25 +49,30 @@ export function DynamicQuestionsForm({
   } | null>(null)
 
   // Función para determinar si una pregunta debe ser visible - MEMOIZADA
+  // Crear un mapa de respuestas memoizado para evitar recálculos innecesarios
+  const responsesMap = useMemo(() => {
+    const map = new Map<number, string>()
+    responses.forEach(r => map.set(r.questionId, r.response))
+    return map
+  }, [responses])
+  
+  // Función para verificar si una pregunta es visible
   const isQuestionVisible = useCallback((question: EligibilityQuestion): boolean => {
     // Si no tiene condición, siempre es visible
     if (!question.condition) return true
     
-    // Buscar la respuesta de la pregunta condicional
-    const conditionResponse = responses.find(r => 
-      r.questionId === question.condition?.questionId
-    )
+    // Buscar la respuesta de la pregunta condicional en el mapa
+    const conditionResponse = responsesMap.get(question.condition.questionId)
     
     // Si no hay respuesta para la pregunta condicional, no mostrar
     if (!conditionResponse) return false
     
     // Verificar si la respuesta coincide con la condición
-    const shouldShow = conditionResponse.response === question.condition?.answerId.toString()
-    
-    return shouldShow
-  }, [responses])
+    return conditionResponse === question.condition.answerId.toString()
+  }, [responsesMap])
 
   // Filtrar preguntas visibles - MEMOIZADO para evitar recalcular en cada render
+  // Solo se recalcula si questions o el mapa de respuestas cambió
   const visibleQuestions = useMemo(() => {
     return questions.filter(isQuestionVisible)
   }, [questions, isQuestionVisible])
@@ -75,6 +80,9 @@ export function DynamicQuestionsForm({
   // Ref para evitar notificaciones repetidas de validación
   const lastValidationRef = useRef<{ isValid: boolean; errors: string[] } | null>(null)
 
+  // Ref para forzar validación inicial
+  const hasRunInitialValidation = useRef(false)
+  
   // Exponer función de validación al componente padre
   useEffect(() => {
     if (!onValidateForNext) return
@@ -87,25 +95,50 @@ export function DynamicQuestionsForm({
         errors.push(`Question ${question.questionId} is required`)
       }
     })
-    const isValid = errors.length === 0
+    
+    // CORREGIDO: Determinar si es válido
+    // - Si hay preguntas dinámicas (questions.length > 0) pero no hay visibles (visibleQuestions.length === 0),
+    //   entonces están cargando o ninguna es visible por lógica condicional: INVÁLIDO
+    // - Si no hay preguntas dinámicas (questions.length === 0), entonces es VÁLIDO (no hay nada que validar)
+    // - Si hay preguntas visibles, solo es válido si todas están respondidas (errors.length === 0)
+    let isValid: boolean
+    if (questions.length === 0) {
+      // No hay preguntas dinámicas definidas para este plan
+      isValid = true
+    } else if (visibleQuestions.length === 0) {
+      // Hay preguntas pero ninguna visible (cargando o condicionales)
+      isValid = false
+    } else {
+      // Hay preguntas visibles: validar que todas estén respondidas
+      isValid = errors.length === 0
+    }
+    
     const next = { isValid, errors }
     
-    // Solo notificar si cambió
+    // Solo notificar si cambió O si es la primera validación
     const prev = lastValidationRef.current
     const changed =
+      !hasRunInitialValidation.current ||
       !prev ||
       prev.isValid !== next.isValid ||
       prev.errors.length !== next.errors.length ||
       !prev.errors.every((e, i) => e === next.errors[i])
 
     if (changed) {
-      console.log('Validación completa:', {
+      console.log('🔍 [DynamicQuestionsForm] Validación actualizada:', {
+        totalQuestions: questions.length,
         totalVisibleQuestions: visibleQuestions.length,
-        answeredQuestions: responses.length,
-        errors: errors.length,
-        isValid
+        answeredQuestions: responses.filter(r => visibleQuestions.some(q => q.questionId === r.questionId)).length,
+        errorsCount: errors.length,
+        isValid,
+        reason: questions.length === 0 ? 'Sin preguntas dinámicas' : 
+                visibleQuestions.length === 0 ? 'Preguntas cargando o no visibles' :
+                errors.length === 0 ? 'Todas respondidas' : 'Faltan respuestas',
+        visibleQuestionsIds: visibleQuestions.map(q => q.questionId),
+        responsesIds: responses.map(r => r.questionId)
       })
       lastValidationRef.current = next
+      hasRunInitialValidation.current = true
       onValidateForNext(next.isValid, next.errors)
     }
   }, [visibleQuestions, responses, onValidateForNext])
@@ -156,8 +189,28 @@ export function DynamicQuestionsForm({
     }
   }, [onKnockoutDetected])
 
-  // Notificar cambios al componente padre
+  // Ref para evitar notificaciones redundantes al padre
+  const lastResponsesNotification = useRef<{ 
+    responsesKey: string; 
+    validationKey: string 
+  } | null>(null)
+
+  // Notificar cambios al componente padre solo si realmente cambió
   useEffect(() => {
+    // Crear claves únicas para comparar
+    const responsesKey = responses.map(r => `${r.questionId}:${r.response}`).sort().join('|')
+    const validationKey = `${validation.isValid}:${validation.errors.join(',')}:${(validation.knockoutAnswers || []).join(',')}`
+    
+    // Verificar si realmente cambió
+    const lastNotification = lastResponsesNotification.current
+    if (lastNotification && 
+        lastNotification.responsesKey === responsesKey && 
+        lastNotification.validationKey === validationKey) {
+      return // No cambió, no hacer nada
+    }
+    
+    // Actualizar el ref y notificar
+    lastResponsesNotification.current = { responsesKey, validationKey }
     memoizedOnResponsesChange(responses, validation)
   }, [responses, validation, memoizedOnResponsesChange])
   
@@ -215,10 +268,26 @@ export function DynamicQuestionsForm({
     })
   }
   
+  // Ref para mantener el valor actual de responses (para evitar dependencias circulares)
+  const responsesRef = useRef(responses)
+  useEffect(() => {
+    responsesRef.current = responses
+  }, [responses])
+  
+  // Ref para mantener el valor actual de questionIdsWithAttempts
+  const questionIdsWithAttemptsRef = useRef(questionIdsWithAttempts)
+  useEffect(() => {
+    questionIdsWithAttemptsRef.current = questionIdsWithAttempts
+  }, [questionIdsWithAttempts])
+  
   // Ref para evitar ejecutar limpieza en el primer render
   const cleanupBootstrapRef = useRef(false)
+  
+  // Ref para rastrear la última limpieza realizada
+  const lastCleanupRef = useRef<string | null>(null)
 
   // Limpiar respuestas de preguntas que ya no son visibles
+  // IMPORTANTE: Solo depende de visibleQuestions para evitar bucles infinitos
   useEffect(() => {
     // Skip en el primer render
     if (!cleanupBootstrapRef.current) {
@@ -227,25 +296,38 @@ export function DynamicQuestionsForm({
     }
 
     const visibleQuestionIds = visibleQuestions.map(q => q.questionId)
-    const responsesToKeep = responses.filter(r => visibleQuestionIds.includes(r.questionId))
+    const visibleIdsKey = visibleQuestionIds.sort().join(',')
     
-    if (responsesToKeep.length !== responses.length) {
+    // Verificar si ya hemos ejecutado esta limpieza para estas preguntas visibles
+    if (lastCleanupRef.current === visibleIdsKey) {
+      return // Ya se limpió para estas preguntas visibles
+    }
+    
+    // Obtener el valor actual de responses desde el ref
+    const currentResponses = responsesRef.current
+    const responsesToKeep = currentResponses.filter(r => visibleQuestionIds.includes(r.questionId))
+    
+    if (responsesToKeep.length !== currentResponses.length) {
       console.log('Cleaning up responses for hidden questions:', {
-        originalResponses: responses.length,
+        originalResponses: currentResponses.length,
         keptResponses: responsesToKeep.length,
-        removedResponses: responses.length - responsesToKeep.length
+        removedResponses: currentResponses.length - responsesToKeep.length
       })
       
       // Actualizar respuestas solo si hay cambios
       setResponses(responsesToKeep)
     }
-
+    
     // También limpiar intentos de preguntas que ya no son visibles
-    const attemptsToKeep = questionIdsWithAttempts.filter(id => visibleQuestionIds.includes(id))
-    if (attemptsToKeep.length !== questionIdsWithAttempts.length) {
+    const currentAttempts = questionIdsWithAttemptsRef.current
+    const attemptsToKeep = currentAttempts.filter(id => visibleQuestionIds.includes(id))
+    if (attemptsToKeep.length !== currentAttempts.length) {
       setQuestionIdsWithAttempts(attemptsToKeep)
     }
-  }, [visibleQuestions, responses, questionIdsWithAttempts])
+    
+    // Actualizar el ref DESPUÉS de procesar
+    lastCleanupRef.current = visibleIdsKey
+  }, [visibleQuestions])
 
   const renderQuestion = (question: EligibilityQuestion) => {
     const currentResponse = responses.find(r => r.questionId === question.questionId)

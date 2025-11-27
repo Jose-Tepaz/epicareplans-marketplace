@@ -20,18 +20,91 @@ export async function GET(request: Request) {
           const meta: any = user.user_metadata || {}
           const firstName = meta.first_name || meta.given_name || null
           const lastName = meta.last_name || meta.family_name || null
-          const payload = {
+          
+          // Verificar si el usuario ya existe
+          const { data: existingUser } = await supabase
+            .from('users')
+            .select('id, role, agent_id')
+            .eq('id', user.id)
+            .single()
+          
+          // Determinar si es un usuario nuevo del marketplace (no invitado)
+          const isNewMarketplaceUser = !existingUser && type !== 'invite' && !meta.role
+          
+          const payload: any = {
             id: user.id,
             email: user.email,
             first_name: firstName,
             last_name: lastName,
           }
+          
+          // Si es un usuario nuevo del marketplace, establecer role='client' y created_via='marketplace'
+          // El trigger asignará el agente automáticamente
+          if (isNewMarketplaceUser) {
+            payload.role = 'client'
+            payload.created_via = 'marketplace'
+            console.log('👤 Usuario nuevo del marketplace detectado, estableciendo role=client y created_via=marketplace')
+          }
+          
+          // Si el usuario existe pero no tiene role, establecer role='client' para que el trigger funcione
+          if (existingUser) {
+            if (!existingUser.role && type !== 'invite' && !meta.role) {
+              payload.role = 'client'
+              payload.created_via = payload.created_via || 'marketplace'
+              console.log('👤 Usuario existente sin role, estableciendo role=client')
+            }
+            
+            // Si el usuario existe y tiene role='client' pero no tiene agente, asegurar que el role esté en el payload
+            // para que el trigger de UPDATE funcione
+            if (existingUser.role === 'client' && !existingUser.agent_id) {
+              payload.role = 'client' // Asegurar que el role esté en el payload para el UPDATE
+              console.log('👤 Usuario con role=client pero sin agente, actualizando para disparar trigger')
+            }
+          }
+          
           // Upsert to ensure row exists and names are stored
           const { error: upsertError } = await supabase
             .from('users')
             .upsert(payload, { onConflict: 'id' })
           if (upsertError) {
             console.error('Failed to upsert users profile in callback:', upsertError)
+          } else {
+            // Verificar y asignar agente si no tiene (fallback manual)
+            const { data: updatedUser } = await supabase
+              .from('users')
+              .select('agent_id, role')
+              .eq('id', user.id)
+              .single()
+            
+            if (updatedUser && updatedUser.role === 'client' && !updatedUser.agent_id) {
+              console.log('⚠️ Usuario sin agente después del upsert, asignando agente por defecto manualmente...')
+              
+              // Buscar agente por defecto
+              const { data: defaultAgent } = await supabase
+                .from('agents')
+                .select('id')
+                .eq('agent_code', 'DEFAULT-ALLSTATE')
+                .eq('is_active', true)
+                .single()
+              
+              if (defaultAgent) {
+                // Asignar agente al usuario
+                const { error: assignError } = await supabase
+                  .from('users')
+                  .update({ agent_id: defaultAgent.id })
+                  .eq('id', user.id)
+                
+                if (!assignError) {
+                  console.log('✅ Agente asignado manualmente:', defaultAgent.id)
+                } else {
+                  console.error('❌ Error asignando agente:', assignError)
+                }
+              } else {
+                console.warn('⚠️ No se encontró agente DEFAULT-ALLSTATE')
+              }
+            } else if (updatedUser?.agent_id) {
+              console.log('✅ Usuario ya tiene agente asignado:', updatedUser.agent_id)
+            }
           }
 
           // Si es una invitación, determinar a dónde redirigir según el rol
