@@ -65,7 +65,7 @@ export default function CheckoutPage() {
 
   const handleFamilyChange = useCallback(async (activeMembers: FamilyMember[] = []) => {
     console.log('🔄 Detectado cambio en familia (Checkout), recalculando precios...')
-    console.log('👥 Miembros activos para cotización:', activeMembers.length)
+    console.log('👥 Miembros activos para cotización (recibidos):', activeMembers.length, activeMembers.map(m => m.id))
     setIsUpdatingPrices(true)
 
     try {
@@ -113,15 +113,35 @@ export default function CheckoutPage() {
         hasPriorCoverage: false // Default
       })
 
+      // Ensure state is present for checkout recalculation
+      let state = baseData.state
+      if (!state && baseData.zipCode) {
+        try {
+          console.log('🔍 Fetching state for Checkout Rate/Cart...')
+          const res = await fetch(`/api/address/validate-zip/${baseData.zipCode}`)
+          const data = await res.json()
+          if (data.success && data.data?.state) {
+            state = data.data.state
+            console.log('✅ State fetched for checkout:', state)
+          }
+        } catch (e) {
+          console.error('Failed to fetch state for Checkout Rate/Cart', e)
+        }
+      }
+
       // Iterar sobre los items del carrito y actualizar precio usando Rate/Cart
       let changesCount = 0
       
       for (const item of items) {
-        // Solo recotizar si es un plan de Allstate (o tiene soporte Rate/Cart)
+          // Solo recotizar si es un plan de Allstate (o tiene soporte Rate/Cart)
         // Asumimos que si está en el carrito, queremos intentar recotizarlo si es Allstate.
         // Verificamos por carrierSlug o allState flag
         if (item.carrierSlug === 'allstate' || item.allState) {
-          console.log(`🔄 Recalculando precio para: ${item.name}`)
+          console.log(`🔄 Recalculando precio para: ${item.name} (${item.id})`)
+          
+          // Si no hay miembros activos, intentar resetear al precio base original si está disponible
+          // OJO: Rate/Cart siempre debe llamarse para obtener el precio más fresco, 
+          // incluso para 1 persona (Applicant solo)
           
           const result = await getUpdatedPlanPrice(
             primaryApplicant,
@@ -129,7 +149,7 @@ export default function CheckoutPage() {
             item,
             {
               zipCode: baseData.zipCode,
-              state: baseData.state || 'NJ', // Fallback
+              state: state || 'NJ', // Fallback with improved logic
               effectiveDate: baseData.coverageStartDate,
               paymentFrequency: baseData.paymentFrequency
             }
@@ -137,22 +157,30 @@ export default function CheckoutPage() {
 
           if (result.success) {
             // Verificar si el precio o metadata cambió
-            const meta = item.metadata as { applicantsIncluded?: number } | undefined
+            const meta = item.metadata as { applicantsIncluded?: number; originalPrice?: number } | undefined
             const currentApplicants = meta?.applicantsIncluded || 1
             const newApplicants = 1 + activeMembers.length
             
-            if (item.price !== result.price || currentApplicants !== newApplicants) {
-               console.log(`✅ Precio actualizado para ${item.name}: ${item.price} -> ${result.price}`)
+            // Lógica crítica:
+            // Si activeMembers es 0, deberíamos tener el precio base (para 1 persona).
+            // Si Rate/Cart devuelve algo diferente, confiamos en Rate/Cart.
+            
+            // Check if price OR number of applicants changed
+            // Also update if we haven't tracked applicantsIncluded yet
+            if (item.price !== result.price || currentApplicants !== newApplicants || meta?.applicantsIncluded === undefined) {
+               console.log(`✅ Precio actualizado para ${item.name}: ${item.price} -> ${result.price} (Applicants: ${newApplicants})`)
                updateItem(item.id, {
                  price: result.price,
                  metadata: {
                    ...item.metadata,
-                   originalPrice: result.originalPrice, // Guardar original si no existía
+                   originalPrice: meta?.originalPrice || (newApplicants === 1 ? result.price : item.price), // Keep oldest known or set current
                    priceUpdatedWithRateCart: true,
                    applicantsIncluded: newApplicants
                  }
                })
                changesCount++
+            } else {
+               console.log(`ℹ️ Precio sin cambios para ${item.name}: ${result.price}`)
             }
           } else {
             console.warn(`⚠️ No se pudo actualizar precio para ${item.name}: ${result.error}`)
@@ -178,9 +206,13 @@ export default function CheckoutPage() {
 
   // Initial calculation on mount
   useEffect(() => {
+    // Only run if family members are initialized, we haven't run it yet, and there are items in cart
     if (isFamilyInitialized && familyMembers.length > 0 && !hasInitialCalcRef.current && items.length > 0) {
+       // IMPORTANT: Filter by included_in_quote property from DB state
        const activeMembers = familyMembers.filter(m => m.included_in_quote !== false)
-       // Call handleFamilyChange directly
+       console.log('🏁 Initial checkout calculation. Total members:', familyMembers.length, 'Active members:', activeMembers.length)
+       
+       // Call handleFamilyChange directly with correct initial members
        handleFamilyChange(activeMembers)
        hasInitialCalcRef.current = true
     }

@@ -128,7 +128,9 @@ export function FamilyMembersManager({ showTitle = true, compact = false, onMemb
     
     // Update DB
     try {
+      console.log('🔄 Updating member quote status in DB:', memberId, isSelected)
       await updateMember(memberId, { included_in_quote: isSelected })
+      console.log('✅ Member quote status updated in DB')
     } catch (err) {
       console.error('Failed to persist selection state', err)
       // Optional: revert UI state or show error
@@ -136,11 +138,17 @@ export function FamilyMembersManager({ showTitle = true, compact = false, onMemb
     
     // We notify change immediately here
     if (onMemberChange) {
+       // active uses 'familyMembers' from hook
+       // IMPORTANT: The member being toggled might still have old status in 'familyMembers'
+       // We must explicitly ensure it's treated as selected/deselected based on 'next'
        const active = familyMembers.filter(m => m.id && next.has(m.id))
+       
        // Update the local member object for correct passing
        const activeWithUpdate = active.map(m => 
          m.id === memberId ? { ...m, included_in_quote: isSelected } : m
        )
+       
+       console.log('📣 Notifying member change. Active count:', activeWithUpdate.length, 'IDs:', activeWithUpdate.map(m => m.id))
        onMemberChange(activeWithUpdate)
     }
   }

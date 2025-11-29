@@ -170,8 +170,19 @@ export async function getUpdatedPlanPrice(
     if (result.success && result.plans && result.plans.length > 0) {
       const updatedPlan = result.plans[0]
       // Allstate Rate/Cart devuelve el precio en diferentes campos
-      // Prioridad: totalRate > rate > insuranceRate > monthlyPremium
-      const newPrice = updatedPlan.totalRate || updatedPlan.rate || updatedPlan.insuranceRate || updatedPlan.monthlyPremium || originalPrice
+      // IMPORTANTE: insuranceRate es el precio del plan individual SIN incluir membresías de asociación
+      // totalRate incluye membresías y otros cargos adicionales
+      // Para el precio del plan específico, usar: insuranceRate > monthlyPremium > rate > totalRate
+      const newPrice = updatedPlan.insuranceRate || updatedPlan.monthlyPremium || updatedPlan.rate || updatedPlan.totalRate || originalPrice
+      
+      console.log('💰 Price extraction from Rate/Cart:', {
+        planName: plan.name,
+        insuranceRate: updatedPlan.insuranceRate,
+        rate: updatedPlan.rate,
+        totalRate: updatedPlan.totalRate,
+        monthlyPremium: updatedPlan.monthlyPremium,
+        selectedPrice: newPrice
+      })
       
       return {
         price: newPrice,

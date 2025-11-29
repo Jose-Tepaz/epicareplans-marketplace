@@ -129,15 +129,19 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
 
   // Manejar la selección del plan
   const handleSelectPlan = async () => {
-    // Si no hay family members o no es un plan de Allstate, agregar directamente
+    // Filtrar family members que están incluidos en el quote
+    const activeFamilyMembers = familyMembers.filter(m => m.included_in_quote !== false)
+
+    // Si no es un plan de Allstate, agregar directamente sin recálculo
     const isAllstatePlan = plan.carrierSlug === 'allstate' || plan.allState
     
-    if (familyMembers.length === 0 || !isAllstatePlan) {
+    if (!isAllstatePlan) {
       addItem(plan)
       return
     }
 
-    // Si hay family members, calcular precio actualizado con Rate/Cart
+    // Para planes de Allstate, SIEMPRE calcular precio con Rate/Cart
+    // (incluso si no hay family members, para obtener el precio correcto individual)
     setIsCalculatingPrice(true)
 
     try {
@@ -162,24 +166,44 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
         hasPriorCoverage: false
       })
 
+      // Ensure state is present
+      let state = formData.state
+      if (!state && formData.zipCode) {
+        try {
+          // Try to fetch state if missing
+          console.log('🔍 Fetching state for Rate/Cart...')
+          const res = await fetch(`/api/address/validate-zip/${formData.zipCode}`)
+          const data = await res.json()
+          if (data.success && data.data?.state) {
+            state = data.data.state
+            // Update session storage for future use
+            const updatedFormData = { ...formData, state }
+            sessionStorage.setItem('insuranceFormData', JSON.stringify(updatedFormData))
+            console.log('✅ State fetched and saved:', state)
+          }
+        } catch (e) {
+          console.error('Failed to fetch state for Rate/Cart', e)
+        }
+      }
+
       // Obtener precio actualizado
       console.log('🔄 Calculating price with Rate/Cart for:', plan.name)
-      console.log('🔄 Family members:', familyMembers.length)
+      console.log('🔄 Active Family members:', activeFamilyMembers.length)
 
       const result = await getUpdatedPlanPrice(
         primaryApplicant,
-        familyMembers,
+        activeFamilyMembers,
         plan,
         {
           zipCode: formData.zipCode,
-          state: formData.state || 'NJ',
+          state: state || 'NJ',
           effectiveDate: formData.coverageStartDate,
           paymentFrequency: formData.paymentFrequency || 'Monthly'
         }
       )
 
-      if (result.success && result.price !== result.originalPrice) {
-        // Crear plan con precio actualizado
+      if (result.success) {
+        // Crear plan con precio actualizado (siempre, incluso si es el mismo)
         const updatedPlan = {
           ...plan,
           price: result.price,
@@ -187,15 +211,19 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
             ...plan.metadata,
             originalPrice: result.originalPrice,
             priceUpdatedWithRateCart: true,
-            applicantsIncluded: familyMembers.length + 1
+            applicantsIncluded: activeFamilyMembers.length + 1
           }
         }
 
         addItem(updatedPlan)
         
-        toast.success('Price updated for family coverage', {
-          description: `Updated from $${result.originalPrice.toFixed(2)} to $${result.price.toFixed(2)} for ${familyMembers.length + 1} applicants`
-        })
+        if (activeFamilyMembers.length > 0) {
+          toast.success('Price updated for family coverage', {
+            description: `Price: $${result.price.toFixed(2)} for ${activeFamilyMembers.length + 1} applicants`
+          })
+        } else {
+          console.log(`✅ Plan added with individual price: $${result.price.toFixed(2)}`)
+        }
       } else {
         // Agregar con precio original si falla o es el mismo
         addItem(plan)

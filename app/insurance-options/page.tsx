@@ -22,6 +22,7 @@ import { getUserProfile } from "@/lib/api/enrollment-db";
 import { useRouter } from "next/navigation";
 import { FamilyMembersManager } from "@/components/family-members-manager";
 import { useFamilyMembers } from "@/hooks/use-family-members";
+import { useCart } from "@/contexts/cart-context"; // Import useCart
 
 import type { FamilyMember } from "@/lib/types/enrollment";
 
@@ -30,6 +31,7 @@ export default function InsuranceOptionsPage() {
   const { user, loading: authLoading } = useAuth();
   const isClient = useClientOnly();
   const { familyMembers, isInitialized: isFamilyInitialized } = useFamilyMembers();
+  const { items: cartItems, updateItem } = useCart(); // Use cart hook
 
   const [insurancePlans, setInsurancePlans] = useState<InsurancePlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,6 +69,7 @@ export default function InsuranceOptionsPage() {
     lastTobaccoUse: "",
     coverageStartDate: "",
     paymentFrequency: "",
+    state: "",
   });
 
   const normalizeAgentProducts = (products: any[]): string[] => {
@@ -235,6 +238,35 @@ export default function InsuranceOptionsPage() {
       }
     }
   }, [isClient]);
+
+  // Fetch state if zipCode is present but state is missing
+  useEffect(() => {
+    if (!isClient || !formData.zipCode || formData.state) return;
+
+    const fetchState = async () => {
+      try {
+        console.log("🔍 [AUTO-DETECT] Fetching state for ZIP:", formData.zipCode);
+        const res = await fetch(`/api/address/validate-zip/${formData.zipCode}`);
+        const data = await res.json();
+        
+        if (data.success && data.data?.state) {
+          console.log("📍 [AUTO-DETECT] Found state:", data.data.state);
+          const updatedFormData = { ...formData, state: data.data.state };
+          setFormData(updatedFormData);
+          
+          try {
+            sessionStorage.setItem("insuranceFormData", JSON.stringify(updatedFormData));
+          } catch (e) {
+            console.warn("Failed to update sessionStorage with state", e);
+          }
+        }
+      } catch (e) {
+        console.error("❌ Error fetching state from ZIP:", e);
+      }
+    };
+
+    fetchState();
+  }, [formData.zipCode, formData.state, isClient]);
 
   // When authenticated, prefer Supabase profile over any local/session values for core fields
   useEffect(() => {
@@ -550,6 +582,48 @@ export default function InsuranceOptionsPage() {
         setManhattanLifeAgentProducts(mlProducts);
         setCurrentPage(1);
         setError(null);
+
+        // Sync cart items with new prices
+        if (cartItems.length > 0) {
+          console.log("🔄 Syncing cart prices with new results...");
+          const activeMembersCount = activeMembers ? activeMembers.length : 0;
+          
+          cartItems.forEach(cartItem => {
+            // Find the updated plan in the new results
+            // Match by ID, but also check productCode/planKey just in case
+            const updatedPlan = normalizedPlans.find(p => p.id === cartItem.id);
+            
+            if (updatedPlan) {
+              const currentPrice = cartItem.price;
+              const newPrice = updatedPlan.price;
+              
+              // Also check if applicants included matches current selection
+              const meta = cartItem.metadata as { applicantsIncluded?: number } | undefined;
+              const currentApplicants = meta?.applicantsIncluded || 1;
+              const newApplicants = 1 + activeMembersCount;
+              
+              // Only update if something fundamentally changed
+              // If the new plan price is significantly higher (e.g. double), 
+              // it means the quoting API returned a family price
+              if (currentPrice !== newPrice || currentApplicants !== newApplicants) {
+                console.log(`⚡ Updating cart item ${cartItem.name}: $${currentPrice} -> $${newPrice}`);
+                updateItem(cartItem.id, {
+                  price: newPrice,
+                  metadata: {
+                    ...cartItem.metadata,
+                    originalPrice: updatedPlan.metadata?.originalPrice || updatedPlan.price,
+                    priceUpdatedWithRateCart: true,
+                    applicantsIncluded: newApplicants
+                  }
+                });
+              }
+            } else {
+               // Plan not found in new results (maybe criteria changed too much?)
+               // In this case, we should probably not touch it or mark it as unavailable
+               console.warn(`Plan ${cartItem.name} (${cartItem.id}) not found in new quote results`);
+            }
+          });
+        }
       } else {
         console.warn("No plans returned from API");
         sessionStorage.removeItem("insurancePlans");
