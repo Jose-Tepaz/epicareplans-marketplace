@@ -17,13 +17,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const enrollmentData: EnrollmentRequest = await request.json()
+    const requestBody = await request.json()
+    const enrollmentData: EnrollmentRequest = requestBody
+    const selectedPlans: any[] = requestBody.selectedPlans || []
     
     console.log('Guardando application para revisión manual...')
+    console.log('Selected plans count:', selectedPlans.length)
 
     // 1. Obtener company_id y carrier_name
     let company_id: string | null = null
     let carrierName: string | null = enrollmentData.coverages[0]?.carrierName || null
+    
+    // Si no hay carrierName en coverage, intentar obtenerlo de selectedPlans
+    if (!carrierName && selectedPlans.length > 0) {
+      carrierName = selectedPlans[0]?.carrierName || null
+      // Si tenemos carrierSlug pero no carrierName, intentar obtenerlo de la BD
+      if (!carrierName && selectedPlans[0]?.carrierSlug) {
+        const { data: company } = await supabase
+          .from('insurance_companies')
+          .select('id, name')
+          .ilike('slug', selectedPlans[0].carrierSlug)
+          .single()
+        
+        if (company) {
+          carrierName = company.name
+        }
+      }
+    }
 
     // Si tenemos carrierName, buscar company_id
     if (carrierName) {
@@ -39,8 +59,7 @@ export async function POST(request: NextRequest) {
         console.log('Company ID:', company_id, 'Carrier Name:', carrierName)
       }
     } else {
-      // Si no hay carrierName en coverage, intentar obtenerlo del planKey o buscar por plan
-      // Por ahora, intentar buscar Allstate por defecto si no se especifica
+      // Si no hay carrierName en coverage ni en plans, intentar buscar Allstate por defecto
       const { data: defaultCompany } = await supabase
         .from('insurance_companies')
         .select('id, name')
@@ -257,33 +276,116 @@ export async function POST(request: NextRequest) {
 
     console.log('Applicants created:', applicantsData.length)
 
-    // 7. Guardar coverages
-    const coveragesData = enrollmentData.coverages.map(coverage => ({
-      application_id: application.id,
-      plan_key: coverage.planKey,
-      carrier_name: coverage.carrierName,
-      effective_date: coverage.effectiveDate,
-      monthly_premium: coverage.monthlyPremium,
-      payment_frequency: coverage.paymentFrequency,
-      term: coverage.term,
-      number_of_terms: coverage.numberOfTerms,
-      termination_date: coverage.terminationDate,
-      is_automatic_loan_provision_opted_in: coverage.isAutomaticLoanProvisionOptedIn,
-      riders: coverage.riders,
-      discounts: coverage.discounts,
-      agent_number: coverage.agentNumber,
-    }))
+    // 7. Obtener agent_code si tenemos agent_id pero no agent_number
+    let agentCode: string | null = null
+    if (agent_id) {
+      const { data: agentData } = await supabase
+        .from('agents')
+        .select('agent_code')
+        .eq('id', agent_id)
+        .single()
+      
+      if (agentData?.agent_code) {
+        agentCode = agentData.agent_code
+      }
+    }
 
-    const { error: coveragesError } = await supabase
+    // 8. Guardar coverages con información COMPLETA (para visualización en dashboard)
+    const coveragesData = enrollmentData.coverages.map((coverage, index) => {
+      // Buscar el plan original del carrito para obtener info completa
+      const originalPlan = selectedPlans.find(p => 
+        p.planKey === coverage.planKey || 
+        p.productCode === coverage.planKey ||
+        p.id === coverage.planKey
+      )
+      
+      // Determinar carrier_name: usar el del coverage, si no del plan original, si no del company_id, si no basado en carrierSlug
+      let finalCarrierName = coverage.carrierName || originalPlan?.carrierName || carrierName
+      
+      // Si aún no tenemos carrierName, intentar obtenerlo del carrierSlug
+      if (!finalCarrierName) {
+        const carrierSlug = originalPlan?.carrierSlug || coverage.carrierSlug
+        if (carrierSlug === 'allstate') {
+          finalCarrierName = 'Allstate'
+        } else if (carrierSlug === 'manhattan-life') {
+          finalCarrierName = 'Manhattan Life'
+        } else {
+          finalCarrierName = carrierName || 'Allstate' // Fallback final
+        }
+      }
+      
+      // Determinar agent_number: usar el del coverage, si no del plan original, si no del agent_code obtenido, si no default
+      const finalAgentNumber = coverage.agentNumber || originalPlan?.agentNumber || agentCode || process.env.NEXT_PUBLIC_AGENT_NUMBER || "159208"
+      
+      // Determinar monthly_premium: usar el precio FINAL del plan (después de checkout y recálculo con familiares)
+      // El precio del coverage viene de buildEnrollmentRequest que usa plan.price (precio final)
+      // Si no está disponible, usar el precio del plan original del carrito
+      const finalMonthlyPremium = coverage.monthlyPremium || originalPlan?.price || 0
+      
+      return {
+        application_id: application.id,
+        // Campos estándar del coverage
+        plan_key: coverage.planKey,
+        carrier_name: finalCarrierName,
+        carrier_slug: originalPlan?.carrierSlug || null, // Usar del plan original si está disponible
+        effective_date: coverage.effectiveDate,
+        monthly_premium: finalMonthlyPremium,
+        payment_frequency: coverage.paymentFrequency,
+        term: coverage.term ? String(coverage.term) : null,
+        number_of_terms: coverage.numberOfTerms,
+        termination_date: coverage.terminationDate,
+        is_automatic_loan_provision_opted_in: coverage.isAutomaticLoanProvisionOptedIn,
+        riders: coverage.riders || [],
+        discounts: coverage.discounts || [],
+        agent_number: finalAgentNumber,
+        // Campos adicionales del plan original (para visualización)
+        metadata: originalPlan ? {
+          planName: originalPlan.name || originalPlan.planName,
+          productType: originalPlan.productType,
+          planType: originalPlan.planType,
+          coverage: originalPlan.coverage,
+          benefitsList: originalPlan.benefits, // Array de beneficios
+          benefitDescription: originalPlan.benefitDescription,
+          brochureUrl: originalPlan.brochureUrl,
+          carrierSlug: originalPlan.carrierSlug,
+          originalPrice: originalPlan.metadata?.originalPrice || originalPlan.price, // Precio original del plan (antes de Rate/Cart)
+          applicantsIncluded: originalPlan.metadata?.applicantsIncluded || 1, // Número de aplicantes incluidos
+          priceUpdatedWithRateCart: originalPlan.metadata?.priceUpdatedWithRateCart || false,
+          finalPrice: finalMonthlyPremium // Precio final guardado (después de checkout y recálculo)
+        } : {}
+      }
+    })
+
+    // Insertar coverages
+    const { data: insertedCoverages, error: coveragesError } = await supabase
       .from('coverages')
       .insert(coveragesData)
+      .select()
 
     if (coveragesError) {
       console.error('Error creating coverages:', coveragesError)
       throw coveragesError
     }
 
-    console.log('Coverages created:', coveragesData.length)
+    console.log('Coverages created:', insertedCoverages?.length || coveragesData.length)
+
+    // Actualizar carrier_slug para coverages que no lo tienen
+    for (const coverage of insertedCoverages || []) {
+      if (!coverage.carrier_slug && coverage.carrier_name) {
+        const { data: company } = await supabase
+          .from('insurance_companies')
+          .select('slug')
+          .ilike('name', `%${coverage.carrier_name}%`)
+          .single()
+        
+        if (company) {
+          await supabase
+            .from('coverages')
+            .update({ carrier_slug: company.slug })
+            .eq('id', coverage.id)
+        }
+      }
+    }
 
     // 8. Guardar beneficiaries si existen
     if (enrollmentData.coverages[0]?.beneficiaries && enrollmentData.coverages[0].beneficiaries.length > 0) {

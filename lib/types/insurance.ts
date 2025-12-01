@@ -44,4 +44,12 @@ export interface InsurancePlan {
   productCode?: string;
   planKey?: string;
   metadata?: Record<string, unknown>; // Para riders, etc.
+  // Campos adicionales para almacenamiento completo en coverages
+  planName?: string; // Nombre descriptivo del plan
+  term?: number; // Duración del término en meses/años
+  numberOfTerms?: number; // Número de términos
+  riders?: any[]; // Riders adicionales del plan
+  discounts?: any[]; // Descuentos aplicables
+  agentNumber?: string; // Número del agente
+  benefitsList?: string[]; // Lista de beneficios (además del campo benefits existente)
 }

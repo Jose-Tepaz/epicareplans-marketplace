@@ -12,7 +12,8 @@ import { updateUserProfile, recordEnrollmentStartAPI } from "@/lib/api/enrollmen
 import { splitPlansByCompany, evaluateMultiCarrierResults, getMultiCarrierMessage } from "@/lib/api/enrollment-split"
 import { createClient } from "@/lib/supabase/client"
 import { getFamilyMembers, familyMemberToApplicant } from "@/lib/api/family-members"
-import { recalculateQuotes } from "@/lib/utils/quote-calculator"
+import { buildPrimaryApplicant, getUpdatedPlanPrice, familyMemberToRateCartApplicant } from "@/lib/api/carriers/allstate-rate-cart"
+import type { FamilyMember } from "@/lib/types/enrollment"
 
 const TOTAL_STEPS = 9
 
@@ -432,57 +433,120 @@ export default function EnrollmentPage() {
     }
   }
 
-  const handleRecalculateQuotes = async () => {
+  const handleRecalculateQuotes = async (currentFormData?: EnrollmentFormState) => {
     setIsRecalculating(true)
     try {
-      // Convertir additionalApplicants a formato FamilyMember para recalculateQuotes
-      const familyMembers = formData.additionalApplicants.map(app => ({
+      // Usar el formData pasado como parámetro o el estado actual
+      const dataToUse = currentFormData || formData
+      
+      // IMPORTANTE: dataToUse.additionalApplicants ya contiene SOLO los miembros activos
+      // porque FamilyMembersManager filtra por included_in_quote antes de llamar a onMemberChange
+      // Por lo tanto, podemos usar directamente dataToUse.additionalApplicants
+      
+      // Convertir additionalApplicants a formato FamilyMember para Rate/Cart
+      const familyMembers: FamilyMember[] = dataToUse.additionalApplicants.map(app => ({
         first_name: app.firstName,
         last_name: app.lastName,
-        date_of_birth: app.dob, // Asumiendo que está en formato YYYY-MM-DD o ISO
+        date_of_birth: app.dob, // Ya está en formato YYYY-MM-DD o ISO
         gender: app.gender,
         relationship: app.relationship,
         smoker: app.smoker,
-        // Otros campos no críticos para cotización rápida
-      })) as any[]
+        has_prior_coverage: app.hasPriorCoverage || false,
+      })) as FamilyMember[]
 
-      // Datos base del aplicante principal
-      const baseData = {
-        zipCode: formData.zipCode,
-        dateOfBirth: formData.dateOfBirth,
-        gender: formData.gender,
-        smokes: formData.smoker,
-        coverageStartDate: formData.effectiveDate,
-        paymentFrequency: formData.paymentFrequency
+      // Construir Primary Applicant para Rate/Cart
+      const primaryApplicant = buildPrimaryApplicant({
+        dateOfBirth: dataToUse.dateOfBirth,
+        gender: dataToUse.gender,
+        smokes: dataToUse.smoker,
+        hasPriorCoverage: false // Default
+      })
+
+      // Obtener state si no está disponible
+      let state = dataToUse.state
+      if (!state && dataToUse.zipCode) {
+        try {
+          console.log('🔍 Fetching state for Enrollment Rate/Cart...')
+          const res = await fetch(`/api/address/validate-zip/${dataToUse.zipCode}`)
+          const data = await res.json()
+          if (data.success && data.data?.state) {
+            state = data.data.state
+            console.log('✅ State fetched for enrollment:', state)
+          }
+        } catch (e) {
+          console.error('Failed to fetch state for Enrollment Rate/Cart', e)
+          state = 'NJ' // Fallback
+        }
       }
 
-      console.log('🔄 Recalculando precios antes de ir a cobertura...')
-      const { updatedPlans, error } = await recalculateQuotes(baseData, familyMembers, formData.selectedPlans)
+      console.log('🔄 Recalculando precios con Rate/Cart antes de ir a cobertura...')
+      console.log(`📊 Familiares incluidos en recotización: ${familyMembers.length}`)
+      console.log(`📋 Detalles de familiares:`, familyMembers.map(m => ({ 
+        name: `${m.first_name} ${m.last_name}`, 
+        relationship: m.relationship,
+        dob: m.date_of_birth,
+        gender: m.gender,
+        smoker: m.smoker
+      })))
 
-      if (error) {
-        console.error('❌ Error al recalcular:', error)
-        toast.error('Could not update prices', { description: 'Proceeding with estimated prices.' })
-      } else {
-        // Actualizar planes en formData
-        let changesCount = 0
-        const newSelectedPlans = formData.selectedPlans.map(plan => {
-          const updated = updatedPlans.find(p => p.id === plan.id)
-          if (updated && updated.price !== plan.price) {
-            changesCount++
-            return updated
+      // Iterar sobre los planes seleccionados y actualizar precio usando Rate/Cart
+      let changesCount = 0
+      const updatedPlans = [...dataToUse.selectedPlans]
+      
+      for (let i = 0; i < updatedPlans.length; i++) {
+        const plan = updatedPlans[i]
+        
+        // Solo recotizar si es un plan de Allstate
+        if (plan.carrierSlug === 'allstate' || plan.allState) {
+          console.log(`🔄 Recalculando precio para: ${plan.name} (${plan.id})`)
+          
+          const result = await getUpdatedPlanPrice(
+            primaryApplicant,
+            familyMembers, // getUpdatedPlanPrice espera FamilyMember[], no RateCartApplicant[]
+            plan,
+            {
+              zipCode: dataToUse.zipCode,
+              state: state || 'NJ',
+              effectiveDate: dataToUse.effectiveDate,
+              paymentFrequency: dataToUse.paymentFrequency || 'Monthly'
+            }
+          )
+
+          if (result.success) {
+            const newApplicants = 1 + familyMembers.length
+            const meta = plan.metadata as { applicantsIncluded?: number; originalPrice?: number } | undefined
+            
+            if (plan.price !== result.price || meta?.applicantsIncluded !== newApplicants) {
+              console.log(`✅ Precio actualizado para ${plan.name}: $${plan.price} -> $${result.price} (Applicants: ${newApplicants})`)
+              updatedPlans[i] = {
+                ...plan,
+                price: result.price,
+                metadata: {
+                  ...plan.metadata,
+                  originalPrice: meta?.originalPrice || plan.price,
+                  priceUpdatedWithRateCart: true,
+                  applicantsIncluded: newApplicants
+                }
+              }
+              changesCount++
+            }
+          } else {
+            console.warn(`⚠️ No se pudo recalcular precio para ${plan.name}:`, result.error)
           }
-          return plan
-        })
-
-        if (changesCount > 0) {
-          updateFormData('selectedPlans', newSelectedPlans)
-          toast.success('Prices updated', { 
-            description: `Prices adjusted for ${changesCount} plans based on family members.` 
-          })
         }
+      }
+
+      if (changesCount > 0) {
+        updateFormData('selectedPlans', updatedPlans)
+        toast.success('Prices updated', { 
+          description: `Prices adjusted for ${changesCount} plan(s) based on ${familyMembers.length} family member(s).` 
+        })
+      } else {
+        console.log('ℹ️ No se encontraron cambios de precio en los planes')
       }
     } catch (err) {
       console.error('❌ Error inesperado al recalcular:', err)
+      toast.error('Error updating prices', { description: 'Proceeding with current prices.' })
     } finally {
       setIsRecalculating(false)
     }
@@ -501,9 +565,21 @@ export default function EnrollmentPage() {
 
     // Si estamos en el paso 5 (Additional Applicants) y vamos al 6 (Coverage), recalcular precios
     if (currentStep === 5) {
+      // Pequeño delay para asegurar que el estado se haya actualizado después de marcar/desmarcar familiares
+      await new Promise(resolve => setTimeout(resolve, 200))
+      
       // Recalcular precios usando los aplicantes definidos en el formulario
       // En este paso, los 'additionalApplicants' son los que el usuario ha confirmado
-      await handleRecalculateQuotes()
+      // formData.additionalApplicants ya contiene SOLO los miembros activos (marcados para quoting)
+      console.log('📋 Estado actual de additionalApplicants antes de recalcular:', formData.additionalApplicants.length)
+      console.log('📋 Detalles de additionalApplicants:', formData.additionalApplicants.map(app => ({
+        name: `${app.firstName} ${app.lastName}`,
+        relationship: app.relationship,
+        dob: app.dob
+      })))
+      
+      // Usar el estado actualizado para el recálculo
+      await handleRecalculateQuotes(formData)
     }
 
     if (currentStep < TOTAL_STEPS) {
@@ -924,6 +1000,18 @@ export default function EnrollmentPage() {
           ? app.questionResponses 
           : primaryQuestionResponses // Usar los del primary como fallback
         
+        // Mapear relationship a valores válidos de Allstate: Primary, Spouse, Dependent
+        const mapRelationship = (rel: string): string => {
+          if (!rel) return 'Dependent'
+          const relLower = rel.toLowerCase()
+          if (relLower === 'primary' || relLower === 'self') return 'Primary'
+          if (relLower === 'spouse' || relLower === 'wife' || relLower === 'husband') return 'Spouse'
+          // Cualquier otro valor (Child, Dependent, etc.) se mapea a Dependent
+          return 'Dependent'
+        }
+        
+        const mappedRelationship = mapRelationship(app.relationship)
+        
         return {
           applicantId: `additional-${String(index + 1).padStart(3, '0')}`,
           firstName: app.firstName,
@@ -931,15 +1019,15 @@ export default function EnrollmentPage() {
           gender: app.gender,
           dob: new Date(app.dob).toISOString(),
           smoker: app.smoker,
-          relationship: app.relationship,
+          relationship: mappedRelationship,
           ssn: app.ssn,
           weight: Number(app.weight),
           heightFeet: Number(app.heightFeet),
           heightInches: Number(app.heightInches),
           phoneNumbers: app.phoneNumbers || [{
             phoneNumber: app.phone || data.phone,
-            phoneType: app.relationship === 'Dependent' ? 'Home' : 'Mobile',
-            allowTextMessaging: app.relationship !== 'Dependent',
+            phoneType: mappedRelationship === 'Dependent' ? 'Home' : 'Mobile',
+            allowTextMessaging: mappedRelationship !== 'Dependent',
             allowServiceCalls: true
           }],
           questionResponses: appQuestionResponses
@@ -1001,9 +1089,12 @@ export default function EnrollmentPage() {
         
         return {
           planKey: plan.planKey || plan.productCode || plan.id,
+          // Usar el precio FINAL del plan (después de checkout y recálculo con familiares)
           monthlyPremium: plan.price,
           effectiveDate: formattedEffectiveDate,
           paymentFrequency: data.paymentFrequency,
+          carrierName: plan.carrierName || "Allstate", // Agregar carrierName para guardar en BD
+          agentNumber: plan.agentNumber || process.env.NEXT_PUBLIC_AGENT_NUMBER || "159208", // Agregar agentNumber
           applicants: allApplicants.map(app => ({
             applicantId: app.applicantId,
             eligibleRateTier: "Standard"
@@ -1014,6 +1105,7 @@ export default function EnrollmentPage() {
         return {
           planKey: plan.planKey || plan.productCode || plan.id,
           effectiveDate: new Date(data.effectiveDate).toISOString(),
+          // Usar el precio FINAL del plan (después de checkout y recálculo con familiares)
           monthlyPremium: plan.price,
           paymentFrequency: data.paymentFrequency,
           carrierName: plan.carrierName || "All State",

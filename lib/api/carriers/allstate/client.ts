@@ -46,15 +46,27 @@ class AllstateAPI {
     ]
 
     // Add dependents if present
+    console.log('🔍 buildQuoteRequest - formData.dependents:', formData.dependents)
+    console.log('🔍 buildQuoteRequest - dependents count:', formData.dependents?.length || 0)
+    
     if (formData.dependents && Array.isArray(formData.dependents)) {
       formData.dependents.forEach((dep, index) => {
         // Support both camelCase and snake_case for dateOfBirth
         const dobString = dep.dateOfBirth || dep.date_of_birth
         
+        console.log(`🔍 Processing dependent ${index + 1}:`, {
+          firstName: dep.firstName,
+          lastName: dep.lastName,
+          dateOfBirth: dobString,
+          gender: dep.gender,
+          relationship: dep.relationship,
+          smoker: dep.smoker
+        })
+        
         if (dobString) {
           try {
             const depBirthDate = new Date(dobString).toISOString()
-            applicants.push({
+            const applicant = {
               birthDate: depBirthDate,
               gender:
                 dep.gender === 'Male' || dep.gender === 'male' ? 'Male' : 'Female',
@@ -64,24 +76,48 @@ class AllstateAPI {
               hasPriorCoverage: false,
               rateTier: 'Standard',
               memberId: `additional-${String(index + 1).padStart(3, '0')}`
-            })
+            }
+            console.log(`✅ Added dependent ${index + 1} to applicants:`, applicant)
+            applicants.push(applicant)
           } catch (e) {
-            console.warn('Skipping invalid dependent date of birth:', dobString)
+            console.warn('❌ Skipping invalid dependent date of birth:', dobString, e)
           }
+        } else {
+          console.warn(`⚠️ Dependent ${index + 1} missing dateOfBirth:`, dep)
         }
       })
+    } else {
+      console.warn('⚠️ No dependents found or dependents is not an array')
     }
+    
+    console.log(`📊 Total applicants (primary + dependents): ${applicants.length}`)
 
     // Construct the payload exactly as requested, removing extra fields
     // Note: 'productTypes' was removed as it wasn't in the user's example
     // Note: 'PlansToRate' and 'ExcludeAvailablePlans' were removed
-    return {
+    const requestPayload = {
       agentId: this.agentId,
       effectiveDate,
       zipCode: formData.zipCode,
       applicants,
       paymentFrequency: this.mapPaymentFrequency(formData.paymentFrequency)
     } as unknown as AllstateQuoteRequest // Type assertion to bypass strict type checks if interface differs
+    
+    console.log('📤 Allstate Quote Request Payload:', {
+      agentId: requestPayload.agentId,
+      zipCode: requestPayload.zipCode,
+      effectiveDate: requestPayload.effectiveDate,
+      applicantsCount: requestPayload.applicants?.length || 0,
+      applicants: requestPayload.applicants?.map((app: any) => ({
+        memberId: app.memberId,
+        relationshipType: app.relationshipType,
+        gender: app.gender,
+        birthDate: app.birthDate,
+        isSmoker: app.isSmoker
+      }))
+    })
+    
+    return requestPayload
   }
 
   private mapPaymentFrequency(

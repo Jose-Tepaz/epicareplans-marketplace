@@ -52,23 +52,47 @@ export async function recalculateQuotes(
   try {
     // 1. Preparar payload base
     // Asegurar que tenemos los campos mínimos necesarios
+    // Normalizar fecha de nacimiento a formato YYYY-MM-DD si viene en ISO
+    const normalizeDate = (dateStr: string): string => {
+      if (!dateStr) return ""
+      // Si ya está en formato YYYY-MM-DD, retornarlo
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+      // Si está en formato ISO, extraer solo la fecha
+      if (dateStr.includes('T')) return dateStr.split('T')[0]
+      return dateStr
+    }
+
+    // Normalizar gender a formato esperado (male/female)
+    const normalizeGender = (gender: string): string => {
+      if (!gender) return ""
+      const g = gender.toLowerCase()
+      if (g === 'male' || g === 'm') return 'male'
+      if (g === 'female' || g === 'f') return 'female'
+      return gender // Mantener original si no coincide
+    }
+
+    // Mapear dependents con formato correcto
+    const dependents = familyMembers.map(member => {
+      const dob = normalizeDate(member.date_of_birth || member.dob || "")
+      return {
+        firstName: member.first_name || member.firstName || "",
+        lastName: member.last_name || member.lastName || "",
+        dateOfBirth: dob,
+        gender: normalizeGender(member.gender || ""),
+        relationship: member.relationship || "Dependent",
+        smoker: member.smoker || false
+      }
+    })
+
     const payload = {
       zipCode: baseFormData.zipCode || "",
-      dateOfBirth: baseFormData.dateOfBirth || "",
-      gender: baseFormData.gender || "",
+      dateOfBirth: normalizeDate(baseFormData.dateOfBirth || ""),
+      gender: normalizeGender(baseFormData.gender || ""),
       smokes: baseFormData.smokes || false,
       lastTobaccoUse: baseFormData.lastTobaccoUse || "",
       coverageStartDate: baseFormData.coverageStartDate || new Date(Date.now() + 86400000).toISOString().split("T")[0],
       paymentFrequency: baseFormData.paymentFrequency || "monthly",
-      // Agregar información de dependientes
-      dependents: familyMembers.map(member => ({
-        firstName: member.first_name,
-        lastName: member.last_name,
-        dateOfBirth: member.date_of_birth, // YYYY-MM-DD
-        gender: member.gender,
-        relationship: member.relationship,
-        smoker: member.smoker
-      }))
+      dependents: dependents
     }
 
     // Verificar campos requeridos mínimos
@@ -77,7 +101,19 @@ export async function recalculateQuotes(
       return { updatedPlans: currentPlans, error: "Missing basic information" }
     }
 
-    console.log("🔄 Recalculando cotizaciones con payload:", payload)
+    console.log("🔄 Recalculando cotizaciones con payload:", {
+      zipCode: payload.zipCode,
+      dateOfBirth: payload.dateOfBirth,
+      gender: payload.gender,
+      dependentsCount: payload.dependents.length,
+      dependents: payload.dependents.map(d => ({
+        name: `${d.firstName} ${d.lastName}`,
+        dateOfBirth: d.dateOfBirth,
+        gender: d.gender,
+        relationship: d.relationship,
+        smoker: d.smoker
+      }))
+    })
 
     // 2. Llamar a la API de cotización
     const response = await fetch("/api/insurance/quote", {
