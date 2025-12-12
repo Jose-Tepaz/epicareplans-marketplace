@@ -257,7 +257,7 @@ export function Step9Review({ formData, updateFormData, onEditStep }: Step9Revie
       </Card>
 
       {/* Terms and Conditions */}
-      <Card className="bg-blue-50 border-blue-200">
+      <Card className="bg-blue-30 border-blue-200">
         <CardContent className="p-6">
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-blue-800">Terms and Conditions</h3>
@@ -276,7 +276,7 @@ export function Step9Review({ formData, updateFormData, onEditStep }: Step9Revie
                 id="agreeToTerms"
                 checked={formData.agreeToTerms}
                 onCheckedChange={(checked) => updateFormData('agreeToTerms', checked)}
-                className="mt-1"
+                className="mt-1 border-blue-700"
               />
               <label htmlFor="agreeToTerms" className="text-sm text-blue-700 cursor-pointer">
                 I have read and agree to the terms and conditions above

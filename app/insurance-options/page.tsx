@@ -38,6 +38,7 @@ export default function InsuranceOptionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isFetchingPlans, setIsFetchingPlans] = useState(false);
   const [hasStoredFormData, setHasStoredFormData] = useState(false);
+  const [hasAttemptedAutoFetch, setHasAttemptedAutoFetch] = useState(false);
   const lastAutoFetchPayloadRef = useRef<string | null>(null);
 
   // Filter states
@@ -190,10 +191,11 @@ export default function InsuranceOptionsPage() {
       }
     }
 
-    // Si no hay planes almacenados, inicializamos vacío y loading false (el useEffect de auto-fetch se encargará si hay datos)
-    console.log("⚠️  [INIT] No stored plans found in sessionStorage");
+    // Si no hay planes almacenados, inicializamos vacío pero mantenemos loading true
+    // El useEffect de auto-fetch intentará cargar planes y luego cambiará loading a false
+    console.log("⚠️  [INIT] No stored plans found in sessionStorage, will attempt auto-fetch");
     setInsurancePlans([]);
-    setLoading(false);
+    // No cambiamos loading aquí, dejamos que auto-fetch lo maneje
   }, [isClient]);
 
   // Load form data from sessionStorage
@@ -362,12 +364,21 @@ export default function InsuranceOptionsPage() {
     };
 
     const attemptFetch = async () => {
-      if (!shouldAttemptAutoFetch()) return;
+      if (!shouldAttemptAutoFetch()) {
+        // Si no podemos hacer auto-fetch, marcamos como intentado y quitamos loading
+        console.log("⏭️  [AUTO-FETCH] Skipping - conditions not met");
+        setHasAttemptedAutoFetch(true);
+        setLoading(false);
+        return;
+      }
 
       const payload = await buildPayload();
       
       // Check essential fields
       if (!payload.zipCode || !payload.dateOfBirth || !payload.gender) {
+        console.log("⏭️  [AUTO-FETCH] Skipping - missing essential fields");
+        setHasAttemptedAutoFetch(true);
+        setLoading(false);
         return;
       }
 
@@ -383,6 +394,9 @@ export default function InsuranceOptionsPage() {
 
       // 1. Check in-memory ref (avoid loop in same session)
       if (lastAutoFetchPayloadRef.current === payloadKey) {
+        console.log("⏭️  [AUTO-FETCH] Skipping - already fetched this payload");
+        setHasAttemptedAutoFetch(true);
+        setLoading(false);
         return;
       }
 
@@ -390,8 +404,11 @@ export default function InsuranceOptionsPage() {
       if (insurancePlans.length > 0) {
          const storedPayloadKey = sessionStorage.getItem("lastFetchPayloadKey");
          if (storedPayloadKey === payloadKey) {
+           console.log("⏭️  [AUTO-FETCH] Skipping - cached payload matches");
            // Update ref to prevent future loops
            lastAutoFetchPayloadRef.current = payloadKey;
+           setHasAttemptedAutoFetch(true);
+           setLoading(false);
            return;
          }
       }
@@ -446,6 +463,8 @@ export default function InsuranceOptionsPage() {
         setError(err instanceof Error ? err.message : "Problem fetching plans");
       } finally {
         setIsFetchingPlans(false);
+        setHasAttemptedAutoFetch(true);
+        setLoading(false);
       }
     };
 
@@ -792,6 +811,7 @@ export default function InsuranceOptionsPage() {
     loading,
     error,
     isFetchingPlans,
+    hasAttemptedAutoFetch,
     hasStoredFormData,
     user: user ? "authenticated" : "guest",
     missingFields: missingFields.length,
@@ -896,7 +916,9 @@ export default function InsuranceOptionsPage() {
     );
   }
 
-  if (loading) {
+  // Mostrar loading solo si aún no hemos verificado si hay datos en sessionStorage
+  // (isClient es false) o si estamos en la primera carga y no hay datos almacenados
+  if (!isClient) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -1016,7 +1038,18 @@ export default function InsuranceOptionsPage() {
 
             {/* Main content - Insurance cards grid */}
             <div className="flex-1">
-              {filteredPlans.length > 0 ? (
+              {/* Show loading state if fetching for the first time */}
+              {isFetchingPlans && insurancePlans.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="bg-gray-50 rounded-lg p-8">
+                    <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Loading plans...</h3>
+                    <p className="text-gray-600">
+                      We're finding the best insurance options for you.
+                    </p>
+                  </div>
+                </div>
+              ) : filteredPlans.length > 0 ? (
                 <>
                   <div className="mb-4">
                     <p className="text-gray-600">

@@ -100,6 +100,23 @@ export interface Beneficiary {
   allocationPercentage: number
   addresses?: any[]
   phoneNumbers?: any[]
+  userBeneficiaryId?: string // Referencia al beneficiario guardado del usuario
+}
+
+// Beneficiario guardado del usuario para reutilizar en futuros enrollments
+export interface UserBeneficiary {
+  id: string
+  user_id: string
+  first_name: string
+  middle_name: string | null
+  last_name: string
+  relationship: string
+  date_of_birth: string
+  addresses: any[]
+  phone_numbers: any[]
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface Applicant {

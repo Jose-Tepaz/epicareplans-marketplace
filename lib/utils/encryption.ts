@@ -57,3 +57,15 @@ export function getLastFour(value: string): string {
   return value.slice(-4)
 }
 
+// Función para detectar marca de tarjeta
+export function detectCardBrand(cardNumber: string): string {
+  const cleaned = cardNumber.replace(/\D/g, '')
+  
+  if (/^4/.test(cleaned)) return 'Visa'
+  if (/^5[1-5]/.test(cleaned) || /^2[2-7]/.test(cleaned)) return 'Mastercard'
+  if (/^3[47]/.test(cleaned)) return 'Amex'
+  if (/^(6011|622|64|65)/.test(cleaned)) return 'Discover'
+  
+  return 'Unknown'
+}
+

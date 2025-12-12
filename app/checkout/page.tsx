@@ -28,6 +28,7 @@ export default function CheckoutPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isUpdatingPrices, setIsUpdatingPrices] = useState(false)
   const hasInitialCalcRef = useRef(false)
+  const hasSaveAttemptedRef = useRef(false)
   
   const hasMultiApplicantPlans = items.some(item => {
     const meta = item.metadata as { priceUpdatedWithRateCart?: boolean } | undefined
@@ -44,17 +45,22 @@ export default function CheckoutPage() {
   }, [user, loading, router])
 
   useEffect(() => {
-    if (user && !isSaving) {
+    // Solo intentar guardar una vez, incluso si falla, para evitar bucles infinitos
+    if (user && !isSaving && !hasSaveAttemptedRef.current) {
       const exploreData = getExploreDataFromSession()
       
       if (exploreData) {
+        hasSaveAttemptedRef.current = true // Marcar como intentado ANTES de ejecutar
         setIsSaving(true)
+        
         saveExploreDataToProfile(exploreData)
           .then(() => {
+            console.log('✅ Explore data saved successfully')
             clearExploreDataFromSession()
           })
           .catch(err => {
             console.error('❌ Error saving explore data:', err)
+            // NO lanzar el error ni reintentar - solo loguear y continuar
           })
           .finally(() => {
             setIsSaving(false)

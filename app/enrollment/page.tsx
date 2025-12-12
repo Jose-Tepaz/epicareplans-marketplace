@@ -393,33 +393,41 @@ export default function EnrollmentPage() {
         return { isValid: true }
 
       case 8: // Payment Information (antes Paso 8)
-        if (!formData.submitWithoutPayment) {
-          if (!formData.accountHolderFirstName.trim()) {
-            return { isValid: false, message: 'Account holder first name is required' }
-          }
-          if (!formData.accountHolderLastName.trim()) {
-            return { isValid: false, message: 'Account holder last name is required' }
-          }
+        // Si envía sin pago, no validar campos de pago
+        if (formData.submitWithoutPayment) {
+          return { isValid: true }
+        }
+        
+        // Si usa un método de pago guardado, solo validar que esté seleccionado
+        if (formData.savedPaymentMethodId) {
+          console.log('✅ Usando método de pago guardado:', formData.savedPaymentMethodId)
+          return { isValid: true }
+        }
+        
+        // Si no usa método guardado, validar todos los campos
+        if (!formData.accountHolderFirstName?.trim()) {
+          return { isValid: false, message: 'Account holder first name is required' }
+        }
+        if (!formData.accountHolderLastName?.trim()) {
+          return { isValid: false, message: 'Account holder last name is required' }
         }
 
-        if (!formData.submitWithoutPayment) {
-          if (formData.paymentMethod === 'credit_card') {
-            if (!formData.creditCardNumber.trim()) return { isValid: false, message: 'Card number is required' }
-            if (formData.creditCardNumber.replace(/\s/g, '').length < 13) {
-              return { isValid: false, message: 'Invalid card number' }
-            }
-            if (!formData.expirationMonth) return { isValid: false, message: 'Expiration month is required' }
-            if (!formData.expirationYear) return { isValid: false, message: 'Expiration year is required' }
-            if (!formData.cvv.trim()) return { isValid: false, message: 'CVV is required' }
-            if (formData.cvv.length < 3) return { isValid: false, message: 'CVV must be 3-4 digits' }
-            if (!formData.cardBrand) return { isValid: false, message: 'Card brand is required' }
-          } else if (formData.paymentMethod === 'bank_account') {
-            if (!formData.bankName.trim()) return { isValid: false, message: 'Bank name is required' }
-            if (!formData.routingNumber.trim()) return { isValid: false, message: 'Routing number is required' }
-            if (formData.routingNumber.length !== 9) return { isValid: false, message: 'Routing number must be 9 digits' }
-            if (!formData.accountNumber.trim()) return { isValid: false, message: 'Account number is required' }
-            if (!formData.accountType) return { isValid: false, message: 'Account type is required' }
+        if (formData.paymentMethod === 'credit_card') {
+          if (!formData.creditCardNumber?.trim()) return { isValid: false, message: 'Card number is required' }
+          if (formData.creditCardNumber.replace(/\s/g, '').length < 13) {
+            return { isValid: false, message: 'Invalid card number' }
           }
+          if (!formData.expirationMonth) return { isValid: false, message: 'Expiration month is required' }
+          if (!formData.expirationYear) return { isValid: false, message: 'Expiration year is required' }
+          if (!formData.cvv?.trim()) return { isValid: false, message: 'CVV is required' }
+          if (formData.cvv.length < 3) return { isValid: false, message: 'CVV must be 3-4 digits' }
+          if (!formData.cardBrand) return { isValid: false, message: 'Card brand is required' }
+        } else if (formData.paymentMethod === 'bank_account') {
+          if (!formData.bankName?.trim()) return { isValid: false, message: 'Bank name is required' }
+          if (!formData.routingNumber?.trim()) return { isValid: false, message: 'Routing number is required' }
+          if (formData.routingNumber.length !== 9) return { isValid: false, message: 'Routing number must be 9 digits' }
+          if (!formData.accountNumber?.trim()) return { isValid: false, message: 'Account number is required' }
+          if (!formData.accountType) return { isValid: false, message: 'Account type is required' }
         }
         return { isValid: true }
 
@@ -632,7 +640,9 @@ export default function EnrollmentPage() {
           body: JSON.stringify({
             ...buildEnrollmentRequest(formData),
             is_multi_carrier: true,
-            status: 'draft'
+            status: 'draft',
+            savedPaymentMethodId: formData.savedPaymentMethodId,
+            savePaymentMethod: formData.savePaymentMethod
           })
         })
         
@@ -657,7 +667,9 @@ export default function EnrollmentPage() {
             body: JSON.stringify({
               ...buildEnrollmentRequest(formData),
               selectedPlans: companyData.plans,
-              parent_application_id: parentApplicationId
+              parent_application_id: parentApplicationId,
+              savedPaymentMethodId: formData.savedPaymentMethodId,
+              savePaymentMethod: formData.savePaymentMethod
             })
           })
           

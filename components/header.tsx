@@ -87,6 +87,7 @@ export function Header() {
                         >
                           <UserCircle className="h-4 w-4 mr-2" />
                           Mi Dashboard
+
                         </Link>
                         <div className="border-t my-1"></div>
                         <button
@@ -113,7 +114,7 @@ export function Header() {
               </>
             )}
             
-            <Link href="/explore">
+            <Link href={user ? '/insurance-options' : '/explore'}>
               <Button className="rounded-full bg-cyan hover:bg-cyan/90 text-white">Explore</Button>
             </Link>
             <Button 

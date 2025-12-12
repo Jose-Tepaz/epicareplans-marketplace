@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { encrypt, getLastFour } from '@/lib/utils/encryption'
+import { encrypt, getLastFour, detectCardBrand } from '@/lib/utils/encryption'
 import type { EnrollmentRequest } from '@/lib/types/enrollment'
 
 export async function POST(request: NextRequest) {
@@ -197,35 +197,163 @@ export async function POST(request: NextRequest) {
 
     console.log('Application created:', application.id)
 
-    // 5. Guardar datos de pago ENCRIPTADOS
+    // 4.5. Crear notificación para el admin cuando se crea una nueva aplicación
+    // Solo si el estado es 'pending_approval' (aplicación enviada para revisión)
+    if (application.status === 'pending_approval') {
+      try {
+        // Llamar a la API del admin dashboard para crear notificaciones
+        const adminApiUrl = process.env.ADMIN_DASHBOARD_API_URL || process.env.NEXT_PUBLIC_ADMIN_DASHBOARD_URL || 'http://localhost:3002'
+        await fetch(`${adminApiUrl}/api/notifications/new-application`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationId: application.id,
+            clientId: user.id,
+          }),
+        }).catch((err) => {
+          console.error('Error creating admin notification:', err)
+          // No fallar el flujo principal si falla la notificación
+        })
+      } catch (err) {
+        console.error('Error creating admin notification:', err)
+        // No fallar el flujo principal si falla la notificación
+      }
+    }
+
+    // 5. Guardar datos de pago
     const paymentInfo = enrollmentData.paymentInformation
+    const savedPaymentMethodId = requestBody.savedPaymentMethodId
+    const savePaymentMethod = requestBody.savePaymentMethod
     
-    if (paymentInfo) {
+    if (paymentInfo || savedPaymentMethodId) {
       const paymentData: any = {
         application_id: application.id,
-        payment_method: paymentInfo.accountType === 'CreditCard' ? 'credit_card' : 'ach',
+        payment_method: paymentInfo?.accountType === 'CreditCard' ? 'credit_card' : 'ach',
         payment_frequency: enrollmentData.coverages[0]?.paymentFrequency || 'monthly',
         created_by: user.id,
       }
 
-      // Encriptar según el tipo de pago
-      if (paymentInfo.accountType === 'CreditCard') {
-        paymentData.card_holder_name = `${paymentInfo.accountHolderFirstName} ${paymentInfo.accountHolderLastName}`
-        paymentData.card_number_encrypted = encrypt(paymentInfo.creditCardNumber || '')
-        paymentData.card_last_four = getLastFour(paymentInfo.creditCardNumber || '')
-        paymentData.card_brand = paymentInfo.cardBrand
-        paymentData.card_expiry_month = paymentInfo.expirationMonth
-        paymentData.card_expiry_year = paymentInfo.expirationYear
-        paymentData.cvv_encrypted = encrypt(paymentInfo.cvv || '')
-      } else {
-        // ACH
-        paymentData.account_holder_name = `${paymentInfo.accountHolderFirstName} ${paymentInfo.accountHolderLastName}`
-        paymentData.account_type = paymentInfo.accountTypeBank
-        paymentData.account_number_encrypted = encrypt(paymentInfo.accountNumber || '')
-        paymentData.account_last_four = getLastFour(paymentInfo.accountNumber || '')
-        paymentData.routing_number_encrypted = encrypt(paymentInfo.routingNumber || '')
-        paymentData.bank_name = paymentInfo.bankName
-        paymentData.desired_draft_date = paymentInfo.desiredDraftDate
+      // Caso 1: Usuario seleccionó un método guardado
+      if (savedPaymentMethodId) {
+        console.log('📦 Usando método de pago guardado:', savedPaymentMethodId)
+        paymentData.user_payment_method_id = savedPaymentMethodId
+        
+        // Obtener datos visibles del método guardado para referencia
+        const { data: savedMethod } = await supabase
+          .from('user_payment_methods')
+          .select('*')
+          .eq('id', savedPaymentMethodId)
+          .eq('user_id', user.id)
+          .single()
+        
+        if (savedMethod) {
+          if (savedMethod.payment_method === 'credit_card' || savedMethod.payment_method === 'debit_card') {
+            paymentData.payment_method = 'credit_card'
+            paymentData.card_holder_name = savedMethod.card_holder_name
+            paymentData.card_last_four = savedMethod.card_last_four
+            paymentData.card_brand = savedMethod.card_brand
+            paymentData.card_expiry_month = savedMethod.card_expiry_month
+            paymentData.card_expiry_year = savedMethod.card_expiry_year
+            // Nota: No guardamos encrypted data aquí, se obtiene del Vault al enviar
+          } else {
+            paymentData.payment_method = 'ach'
+            paymentData.account_holder_name = savedMethod.account_holder_name
+            paymentData.account_last_four = savedMethod.account_last_four
+            paymentData.account_type = savedMethod.account_type
+            paymentData.bank_name = savedMethod.bank_name
+          }
+        }
+      }
+      // Caso 2: Usuario ingresó datos nuevos
+      else if (paymentInfo) {
+        // Encriptar según el tipo de pago
+        if (paymentInfo.accountType === 'CreditCard') {
+          paymentData.card_holder_name = `${paymentInfo.accountHolderFirstName} ${paymentInfo.accountHolderLastName}`
+          paymentData.card_number_encrypted = encrypt(paymentInfo.creditCardNumber || '')
+          paymentData.card_last_four = getLastFour(paymentInfo.creditCardNumber || '')
+          paymentData.card_brand = paymentInfo.cardBrand
+          paymentData.card_expiry_month = paymentInfo.expirationMonth
+          paymentData.card_expiry_year = paymentInfo.expirationYear
+          paymentData.cvv_encrypted = encrypt(paymentInfo.cvv || '')
+        } else {
+          // ACH
+          paymentData.account_holder_name = `${paymentInfo.accountHolderFirstName} ${paymentInfo.accountHolderLastName}`
+          paymentData.account_type = paymentInfo.accountTypeBank
+          paymentData.account_number_encrypted = encrypt(paymentInfo.accountNumber || '')
+          paymentData.account_last_four = getLastFour(paymentInfo.accountNumber || '')
+          paymentData.routing_number_encrypted = encrypt(paymentInfo.routingNumber || '')
+          paymentData.bank_name = paymentInfo.bankName
+          paymentData.desired_draft_date = paymentInfo.desiredDraftDate
+        }
+
+        // Caso 2b: Usuario quiere guardar el nuevo método para uso futuro
+        if (savePaymentMethod && paymentInfo) {
+          console.log('💾 Guardando nuevo método de pago para uso futuro...')
+          try {
+            const newMethodData: any = {
+              user_id: user.id,
+              payment_method: paymentInfo.accountType === 'CreditCard' ? 'credit_card' : 'bank_account',
+              is_default: false,
+              is_active: true,
+            }
+
+            if (paymentInfo.accountType === 'CreditCard') {
+              newMethodData.card_holder_name = `${paymentInfo.accountHolderFirstName} ${paymentInfo.accountHolderLastName}`
+              newMethodData.card_last_four = getLastFour(paymentInfo.creditCardNumber || '')
+              newMethodData.card_brand = paymentInfo.cardBrand || detectCardBrand(paymentInfo.creditCardNumber || '')
+              newMethodData.card_expiry_month = paymentInfo.expirationMonth
+              newMethodData.card_expiry_year = paymentInfo.expirationYear
+              
+              // Guardar datos sensibles en Vault
+              const { data: vaultSecretId, error: vaultError } = await supabase.rpc('create_vault_secret', {
+                secret_value: JSON.stringify({
+                  cardNumber: paymentInfo.creditCardNumber,
+                  cvv: paymentInfo.cvv
+                }),
+                secret_name: `card_${user.id}_${Date.now()}`,
+                secret_description: `Card ending in ${newMethodData.card_last_four}`
+              })
+
+              if (!vaultError && vaultSecretId) {
+                newMethodData.vault_secret_id = vaultSecretId
+              }
+            } else {
+              newMethodData.account_holder_name = `${paymentInfo.accountHolderFirstName} ${paymentInfo.accountHolderLastName}`
+              newMethodData.account_last_four = getLastFour(paymentInfo.accountNumber || '')
+              newMethodData.account_type = paymentInfo.accountTypeBank?.toLowerCase() || 'checking'
+              newMethodData.bank_name = paymentInfo.bankName
+
+              // Guardar datos sensibles en Vault
+              const { data: vaultSecretId, error: vaultError } = await supabase.rpc('create_vault_secret', {
+                secret_value: JSON.stringify({
+                  accountNumber: paymentInfo.accountNumber,
+                  routingNumber: paymentInfo.routingNumber
+                }),
+                secret_name: `bank_${user.id}_${Date.now()}`,
+                secret_description: `Bank account ending in ${newMethodData.account_last_four}`
+              })
+
+              if (!vaultError && vaultSecretId) {
+                newMethodData.vault_secret_id = vaultSecretId
+              }
+            }
+
+            const { data: newMethod, error: saveMethodError } = await supabase
+              .from('user_payment_methods')
+              .insert(newMethodData)
+              .select()
+              .single()
+
+            if (newMethod) {
+              paymentData.user_payment_method_id = newMethod.id
+              console.log('✅ Nuevo método de pago guardado:', newMethod.id)
+            } else if (saveMethodError) {
+              console.error('❌ Error guardando método de pago:', saveMethodError)
+            }
+          } catch (saveErr) {
+            console.error('Error al guardar método de pago para futuro:', saveErr)
+          }
+        }
       }
 
       const { error: paymentError } = await supabase
@@ -236,7 +364,7 @@ export async function POST(request: NextRequest) {
         console.error('Error guardando payment info:', paymentError)
         // No fallar el enrollment por error de pago
       } else {
-        console.log('Payment info guardada (encriptada)')
+        console.log('Payment info guardada', savedPaymentMethodId ? '(linked to saved method)' : '(encrypted)')
       }
     }
 
@@ -400,6 +528,7 @@ export async function POST(request: NextRequest) {
         allocation_percentage: ben.allocationPercentage,
         addresses: ben.addresses,
         phone_numbers: ben.phoneNumbers,
+        user_beneficiary_id: ben.userBeneficiaryId || null, // Referencia al beneficiario guardado
       }))
 
       const { error: beneficiariesError } = await supabase
