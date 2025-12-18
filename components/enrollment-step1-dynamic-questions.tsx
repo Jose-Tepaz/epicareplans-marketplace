@@ -711,8 +711,8 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
       <Alert className="border-yellow-200 bg-yellow-50">
         <AlertTriangle className="h-4 w-4 text-yellow-500" />
         <AlertDescription className="text-yellow-700">
-          <strong>Importante:</strong> Por favor responda todas las preguntas de elegibilidad con precisión para cada aplicante.
-          La información incorrecta puede resultar en la denegación de reclamos o la cancelación de la póliza.
+          <strong>Important:</strong> Please answer all eligibility questions accurately for each applicant.
+          Incorrect information may result in denial of claims or cancellation of the policy.
         </AlertDescription>
       </Alert>
 
@@ -750,8 +750,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
       <Tabs 
         value={activeApplicantTab} 
         onValueChange={(newTab) => {
-          console.log('🔄 [Tab Change]', { from: activeApplicantTab, to: newTab })
-          console.log('📊 [Tab Change] Validaciones actuales:', applicantValidations)
+          
           setActiveApplicantTab(newTab)
         }} 
         className="w-full"
@@ -806,8 +805,8 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
         <Alert className="border-red-200 bg-red-50">
           <AlertTriangle className="h-4 w-4 text-red-500" />
           <AlertDescription className="text-red-700">
-            <strong>Atención:</strong> Una o más de sus respuestas pueden descalificarlo para los planes seleccionados.
-            Por favor, revise sus respuestas o considere seleccionar planes alternativos.
+            <strong>Attention:</strong> One or more of your answers may disqualify you for the selected plans.
+            Please review your answers or consider selecting alternative plans.
           </AlertDescription>
         </Alert>
       )}
@@ -817,7 +816,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
         <Alert className="border-green-200 bg-green-50">
           <CheckCircle className="h-4 w-4 text-green-500" />
           <AlertDescription className="text-green-700">
-            <strong>¡Excelente!</strong> Todas las preguntas han sido respondidas para todos los aplicantes. Puede continuar al siguiente paso.
+            <strong>Excellent!</strong> All questions have been answered for all applicants. You can proceed to the next step.
           </AlertDescription>
         </Alert>
       )}
@@ -827,7 +826,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
         <Alert className="border-orange-200 bg-orange-50">
           <AlertTriangle className="h-4 w-4 text-orange-500" />
           <AlertDescription className="text-orange-700">
-            <strong>Pendiente:</strong> Los siguientes aplicantes aún tienen preguntas sin responder:
+            <strong>Pending:</strong> The following applicants still have unanswered questions:
             <ul className="mt-2 list-disc list-inside">
               {allApplicants
                 .filter(a => getApplicantValidationStatus(a.id) !== 'complete')

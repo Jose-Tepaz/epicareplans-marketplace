@@ -19,6 +19,20 @@ import { useAuth } from "@/contexts/auth-context"
 import { getUserProfile, saveExploreDataToProfile } from "@/lib/api/enrollment-db"
 import { saveExploreDataToSession, clearExploreDataFromSession } from "@/lib/utils/session-storage" 
 
+// Helper function to format date to YYYY-MM-DD without timezone issues
+const formatDateToLocal = (date: Date): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// Helper function to parse YYYY-MM-DD string as local date (not UTC)
+const parseDateLocal = (dateString: string): Date => {
+  const [year, month, day] = dateString.split('-').map(Number)
+  return new Date(year, month - 1, day) // month is 0-indexed
+}
+
 export default function ExplorePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -55,7 +69,7 @@ export default function ExplorePage() {
     if (!coverageStartDate) {
       const futureDate = new Date()
       futureDate.setMonth(futureDate.getMonth() + 1) // 1 month from now
-      setCoverageStartDate(futureDate.toISOString().split('T')[0])
+      setCoverageStartDate(formatDateToLocal(futureDate))
     }
   }, [coverageStartDate])
   const [paymentFrequency, setPaymentFrequency] = useState("")
@@ -250,7 +264,7 @@ export default function ExplorePage() {
       return false
     }
 
-    const birthDate = new Date(date)
+    const birthDate = parseDateLocal(date)
     const today = new Date()
     let age = today.getFullYear() - birthDate.getFullYear()
     const monthDiff = today.getMonth() - birthDate.getMonth()
@@ -277,7 +291,7 @@ export default function ExplorePage() {
       return false
     }
 
-    const startDate = new Date(date)
+    const startDate = parseDateLocal(date)
     const today = new Date()
     today.setHours(0, 0, 0, 0) // Reset time to start of day
 
@@ -512,7 +526,7 @@ export default function ExplorePage() {
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {dateOfBirth ? (
-                        new Date(dateOfBirth).toLocaleDateString()
+                        parseDateLocal(dateOfBirth).toLocaleDateString()
                       ) : (
                         <span className="text-white">Pick a date</span>
                       )}  
@@ -521,10 +535,10 @@ export default function ExplorePage() {
                   <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="single"
-                      selected={dateOfBirth ? new Date(dateOfBirth) : undefined}
+                      selected={dateOfBirth ? parseDateLocal(dateOfBirth) : undefined}
                       captionLayout="dropdown"
                       onSelect={(date) => {
-                        setDateOfBirth(date ? date.toISOString().split("T")[0] : "")
+                        setDateOfBirth(date ? formatDateToLocal(date) : "")
                         if (dateOfBirthError) setDateOfBirthError("") // Clear error when selecting
                       }}
                       initialFocus
@@ -686,12 +700,12 @@ export default function ExplorePage() {
                       className={`input-epicare w-full justify-start text-left font-normal h-12 px-4 py-3 flex items-center ${lastTobaccoUseError ? 'border-red-500' : ''}`}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {lastTobaccoUse ? new Date(lastTobaccoUse).toLocaleDateString() : <span className="text-white">Pick a date</span>}  
+                      {lastTobaccoUse ? parseDateLocal(lastTobaccoUse).toLocaleDateString() : <span className="text-white">Pick a date</span>}  
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={lastTobaccoUse ? new Date(lastTobaccoUse) : undefined} onSelect={(date) => {
-                      setLastTobaccoUse(date ? date.toISOString().split("T")[0] : "")
+                    <Calendar mode="single" selected={lastTobaccoUse ? parseDateLocal(lastTobaccoUse) : undefined} onSelect={(date) => {
+                      setLastTobaccoUse(date ? formatDateToLocal(date) : "")
                       if (lastTobaccoUseError) setLastTobaccoUseError("") // Clear error when selecting
                     }} initialFocus />
                   </PopoverContent>
@@ -747,12 +761,12 @@ export default function ExplorePage() {
                       className={`input-epicare w-full justify-start text-left font-normal h-12 px-4 py-3 flex items-center ${coverageStartDateError ? 'border-red-500' : ''}`}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {coverageStartDate ? new Date(coverageStartDate).toLocaleDateString() : <span className="text-white">Pick a date</span>}  
+                      {coverageStartDate ? parseDateLocal(coverageStartDate).toLocaleDateString() : <span className="text-white">Pick a date</span>}  
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={coverageStartDate ? new Date(coverageStartDate) : undefined} onSelect={(date) => {
-                      setCoverageStartDate(date ? date.toISOString().split("T")[0] : "")
+                    <Calendar mode="single" selected={coverageStartDate ? parseDateLocal(coverageStartDate) : undefined} onSelect={(date) => {
+                      setCoverageStartDate(date ? formatDateToLocal(date) : "")
                       if (coverageStartDateError) setCoverageStartDateError("") // Clear error when selecting
                     }} initialFocus />
                   </PopoverContent>

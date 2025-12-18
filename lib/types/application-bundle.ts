@@ -34,7 +34,16 @@ export interface PossibleAnswer {
   answerText: string
   answerType: 'Radio' | 'Checkbox' | 'FreeText' | 'Date' | 'MonthYearDate' | 'TextArea'
   isKnockOut?: boolean
+  // Algunas variantes del backend/serialización pueden exponer el flag con diferente casing.
+  // Se mantiene opcional para compatibilidad.
+  isKnockout?: boolean
   errorMessage?: string
+}
+
+export interface QuestionVisibilityRule {
+  questionId: number
+  values?: number[]
+  isDefaultHidden: boolean
 }
 
 export interface ConditionalQuestion {
@@ -49,6 +58,10 @@ export interface EligibilityQuestion {
   sequenceNo: number
   possibleAnswers: PossibleAnswer[]
   condition?: ConditionalQuestion
+  // Algunas respuestas del API incluyen reglas de visibilidad por valores de otras preguntas.
+  questionVisibilityRules?: QuestionVisibilityRule[]
+  // Si no viene informado, algunos flujos asumen que la pregunta es requerida por defecto.
+  isRequired?: boolean
 }
 
 export interface AuthorizationQuestion {
@@ -91,6 +104,8 @@ export interface DynamicQuestionResponse {
   questionId: number
   response: string
   dataKey?: string
+  // Forma legacy: ciertos flujos manejan IDs seleccionados como número(s).
+  answerIds?: number | number[]
 }
 
 // Estado del formulario dinámico

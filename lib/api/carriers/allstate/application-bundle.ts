@@ -8,11 +8,36 @@ import {
   DynamicQuestionResponse
 } from '@/lib/types/application-bundle'
 
+/**
+ * Cliente de Allstate (Enrollment API) para obtener el "ApplicationBundle".
+ *
+ * ### Responsabilidad principal
+ * - Construye el payload `ApplicationBundleRequest` a partir de planes seleccionados (quoting) y datos del solicitante.
+ * - Realiza el POST al endpoint de Allstate y retorna `ApplicationBundleResponse`.
+ * - Provee utilidades para:
+ *   - determinar visibilidad de preguntas dinámicas,
+ *   - validar respuestas (incluyendo "knockout answers"),
+ *   - combinar respuestas y calcular dependencias.
+ *
+ * ### Variables de entorno
+ * - `ALLSTATE_ENROLLMENT_URL`: URL base del endpoint `ApplicationBundle`.
+ * - `ALLSTATE_AUTH_TOKEN`: token Basic (string base64 tipo `usuario:password`).
+ * - `ALLSTATE_AGENT_ID`: número/ID del agente enviado como `agentNumber`.
+ *
+ * Nota: Este archivo contiene `console.log`/`console.error` extensos para depuración.
+ * En producción, conviene centralizar el logging y/o reducir PII/ruido.
+ */
 export class ApplicationBundleAPI {
   private baseURL: string
   private authToken: string
   private agentId: string
 
+  /**
+   * Inicializa el cliente usando variables de entorno y valores por defecto (QA).
+   *
+   * Importante: los valores por defecto apuntan a un ambiente QA y un token "de prueba".
+   * Asegúrate de configurar variables de entorno correctas para otros ambientes.
+   */
   constructor() {
     this.baseURL =
       process.env.ALLSTATE_ENROLLMENT_URL ||
@@ -22,6 +47,31 @@ export class ApplicationBundleAPI {
     this.agentId = process.env.ALLSTATE_AGENT_ID || '159208'
   }
 
+  /**
+   * Mapea datos de "quoting" a un `ApplicationBundleRequest`.
+   *
+   * ### Qué hace
+   * - Deriva `planIds` y `planKeys` desde `selectedPlans`.
+   * - Aplica mapeos manuales para ciertos productos (IDs específicos) conocidos.
+   * - Elimina duplicados y valores vacíos (por seguridad ante data repetida).
+   * - Calcula `rateTier` (básico) y `medSuppEnrollmentType` (solo si detecta plan Medicare/Med).
+   *
+   * ### Convenciones
+   * - Si existe `plan.productCode`, se prefiere como `planId` (fallback a `plan.id`).
+   * - Si existe `plan.planKey`, se prefiere como `planKey` (fallback a `plan.name`).
+   *
+   * @param selectedPlans Planes seleccionados en la cotización (estructura flexible / `any`).
+   * @param state Estado (ej. "FL").
+   * @param effectiveDate Fecha de vigencia.
+   * @param dateOfBirth Fecha de nacimiento (para tier de tarifa).
+   * @param isSmoker Indica tabaco (afecta rate tier).
+   * @param hasHealthConditions Condiciones de salud declaradas (afecta rate tier).
+   * @param weight Peso (para BMI).
+   * @param heightFeet Estatura pies (para BMI).
+   * @param heightInches Estatura pulgadas (para BMI).
+   * @param hasPriorCoverage Cobertura previa (para Med Supp).
+   * @param hasMedicare Medicare (para Med Supp).
+   */
   private mapQuotingDataToApplicationBundle(
     selectedPlans: any[],
     state: string,
@@ -176,6 +226,18 @@ export class ApplicationBundleAPI {
     return requestData
   }
 
+  /**
+   * Calcula un `rateTier` simple basado en:
+   * - tabaquismo,
+   * - edad aproximada,
+   * - BMI (si hay peso/altura),
+   * - y condiciones de salud.
+   *
+   * Nota: la edad se calcula como diferencia de años (`year - year`) sin ajustar por mes/día.
+   * Para reglas actuariales más estrictas, convendría un cálculo de edad exacta.
+   *
+   * @returns Uno de: `'PreferredSelect' | 'Preferred' | 'Tobacco' | 'Standard'`.
+   */
   private calculateRateTier(
     dateOfBirth?: string,
     isSmoker?: boolean,
@@ -216,6 +278,17 @@ export class ApplicationBundleAPI {
     return 'Standard'
   }
 
+  /**
+   * Determina `medSuppEnrollmentType` para planes tipo Med/Medicare.
+   *
+   * ### Reglas actuales (simplificadas)
+   * - Si no hay plan con "med"/"medicare" en el nombre: `undefined`.
+   * - Si `hasMedicare`:
+   *   - con `hasPriorCoverage`: `'GI'` (Guaranteed Issue).
+   *   - en meses Oct-Dic: `'OpenEnrollment'`.
+   *   - caso general: `'NoSpecialCircumstances'`.
+   * - Si no `hasMedicare`: `'Unknown'` (placeholder / falta definición).
+   */
   private determineMedSuppType(
     selectedPlans: any[],
     dateOfBirth?: string,
@@ -248,6 +321,18 @@ export class ApplicationBundleAPI {
     return 'Unknown'
   }
 
+  /**
+   * Ejecuta la llamada al endpoint de Allstate `ApplicationBundle`.
+   *
+   * ### Flujo
+   * - Construye `requestData` vía `mapQuotingDataToApplicationBundle`.
+   * - Envía `POST` JSON con `Authorization: Basic <token>`.
+   * - Timeout: 60s (`AbortSignal.timeout(60000)`).
+   * - Si el response no es OK, intenta parsear el body como `ApplicationBundleError[]`;
+   *   si falla, propaga el texto sin parsear.
+   *
+   * @throws Error con un mensaje enriquecido al fallar la petición o el parseo.
+   */
   async getApplicationBundle(
     selectedPlans: any[],
     state: string,
@@ -361,6 +446,21 @@ export class ApplicationBundleAPI {
     }
   }
 
+  /**
+   * Valida respuestas contra un conjunto de preguntas (posiblemente filtradas por visibilidad).
+   *
+   * - **Requeridas**: si una pregunta requerida y visible no tiene respuesta, se agrega error.
+   * - **Knockout**: si una respuesta coincide con un `possibleAnswer.isKnockout`, marca "knockout".
+   * - **UX de errores**: puede ocultar `errors` hasta que:
+   *   - el usuario interactúe (`hasUserInteracted`), o
+   *   - exista intento previo en un conjunto de `questionIdsWithAttempts`.
+   *
+   * @param questions Preguntas de elegibilidad.
+   * @param responses Respuestas del usuario.
+   * @param visibleQuestionIds Si se provee, valida solo las visibles.
+   * @param hasUserInteracted Controla cuándo mostrar errores.
+   * @param questionIdsWithAttempts Preguntas que el usuario ya tocó/intentó.
+   */
   validateQuestionResponses(
     questions: EligibilityQuestion[],
     responses: DynamicQuestionResponse[],
@@ -369,7 +469,9 @@ export class ApplicationBundleAPI {
     questionIdsWithAttempts?: number[]
   ): QuestionValidation {
     const errors: string[] = []
-    const knockoutAnswers: number[] = []
+    // `knockoutAnswers` se interpreta como IDs de preguntas con una respuesta "knockout"
+    // (esto coincide con el uso en `components/dynamic-questions-form.tsx`).
+    const knockoutQuestionIds = new Set<number>()
 
     const questionsToValidate = visibleQuestionIds
       ? questions.filter((q) => visibleQuestionIds.includes(q.questionId))
@@ -383,23 +485,51 @@ export class ApplicationBundleAPI {
         ? visibleQuestionIds.includes(question.questionId)
         : true
 
-      if (!response && question.isRequired && isVisible) {
-        errors.push(
-          `La pregunta "${question.questionText}" es requerida y no tiene respuesta.`
-        )
+      // Algunas integraciones pueden incluir `isRequired`; si no existe, asumimos requerido por defecto.
+      const isRequired = (question as any)?.isRequired ?? true
+      const responseValue = (response as any)?.response
+
+      if (
+        isVisible &&
+        isRequired &&
+        (!responseValue || (typeof responseValue === 'string' && !responseValue.trim()))
+      ) {
+        // Debe incluir "Question {id}" para que la UI pueda detectar el error con `includes(...)`.
+        errors.push(`Question ${question.questionId} is required`)
       }
 
-      if (response) {
-        const answerIds = Array.isArray(response.answerIds)
-          ? response.answerIds
-          : [response.answerIds]
+      // Knockout detection:
+      // - Forma preferida: `response.response` contiene un ID de respuesta (string) para Radio/Checkbox.
+      // - Forma legacy: `response.answerIds` puede existir en integraciones antiguas.
+      if (isVisible && response) {
+        const answerIdsFromLegacy = (response as any)?.answerIds
+        const raw =
+          typeof responseValue === 'string'
+            ? responseValue
+            : responseValue != null
+              ? String(responseValue)
+              : ''
 
-        answerIds.forEach((answerId) => {
+        const selectedIds: number[] =
+          answerIdsFromLegacy != null
+            ? (Array.isArray(answerIdsFromLegacy)
+                ? answerIdsFromLegacy
+                : [answerIdsFromLegacy]
+              ).filter((v: any) => typeof v === 'number')
+            : raw
+                .split(',')
+                .map((s) => parseInt(s.trim(), 10))
+                .filter((n) => Number.isFinite(n))
+
+        selectedIds.forEach((answerId) => {
           const possibleAnswer = question.possibleAnswers?.find(
-            (answer) => answer.answerId === answerId
+            (answer) => answer.id === answerId
           )
-          if (possibleAnswer?.isKnockout) {
-            knockoutAnswers.push(answerId)
+          const isKnockOut =
+            (possibleAnswer as any)?.isKnockOut ?? (possibleAnswer as any)?.isKnockout
+
+          if (isKnockOut) {
+            knockoutQuestionIds.add(question.questionId)
           }
         })
       }
@@ -409,21 +539,29 @@ export class ApplicationBundleAPI {
       hasUserInteracted ||
       (questionIdsWithAttempts &&
         questionIdsWithAttempts.some((id) =>
-          errors.some((error) =>
-            error.includes(
-              questions.find((q) => q.questionId === id)?.questionText || ''
-            )
-          )
+          errors.some((error) => error.includes(`Question ${id}`))
         ))
 
     return {
       isValid: errors.length === 0,
       errors: shouldShowError ? errors : [],
-      hasKnockoutAnswers: knockoutAnswers.length > 0,
-      knockoutAnswers,
+      knockoutAnswers: Array.from(knockoutQuestionIds),
     }
   }
 
+  /**
+   * Calcula qué preguntas son visibles/ocultas según `questionVisibilityRules`.
+   *
+   * ### Modelo de reglas
+   * Para una pregunta con reglas, se considera visible si **todas** las reglas se cumplen:
+   * - Si no hay respuestas previas:
+   *   - visible cuando `!rule.isDefaultHidden`.
+   * - Si existe respuesta a la pregunta dependiente:
+   *   - visible cuando el `answerIds` del dependiente incluye alguno de `rule.values`.
+   *
+   * @returns Listas separadas de `visibleQuestionIds`, `hiddenQuestionIds`,
+   *          y `questionIdsWithAttempts` (respuestas existentes).
+   */
   getVisibleQuestions(
     formState: DynamicFormState,
     previousResponses?: DynamicQuestionResponse[]
@@ -438,8 +576,8 @@ export class ApplicationBundleAPI {
 
     const sections = formState.questionSections || []
 
-    sections.forEach((section) => {
-      section.questions.forEach((question) => {
+    sections.forEach((section: any) => {
+      section.questions.forEach((question: any) => {
         const questionId = question.questionId
         const response = previousResponses?.find(
           (r) => r.questionId === questionId
@@ -454,7 +592,7 @@ export class ApplicationBundleAPI {
           return
         }
 
-        const isVisible = question.questionVisibilityRules.every((rule) => {
+        const isVisible = question.questionVisibilityRules.every((rule: any) => {
           if (!previousResponses?.length) {
             return !rule.isDefaultHidden
           }
@@ -467,11 +605,16 @@ export class ApplicationBundleAPI {
             return !rule.isDefaultHidden
           }
 
-          return rule.values?.some((value) => {
-            if (Array.isArray(dependentResponse.answerIds)) {
-              return dependentResponse.answerIds.includes(value)
+          const depAnswerIds = (dependentResponse as any)?.answerIds
+          const depRaw = (dependentResponse as any)?.response
+
+          return rule.values?.some((value: any) => {
+            if (Array.isArray(depAnswerIds)) {
+              return depAnswerIds.includes(value)
             }
-            return dependentResponse.answerIds === value
+            if (typeof depAnswerIds === 'number') return depAnswerIds === value
+            if (typeof depRaw === 'string') return depRaw === String(value)
+            return false
           })
         })
 
@@ -490,6 +633,15 @@ export class ApplicationBundleAPI {
     }
   }
 
+  /**
+   * Crea un `DynamicFormState` consolidado a partir de aplicaciones devueltas por Allstate.
+   *
+   * Convención actual:
+   * - Se toma `applications[0]` como "primary application".
+   * - Se concatenan las preguntas de todas las secciones (`questionSections`) en `questions`.
+   *
+   * @throws Error si no hay aplicaciones.
+   */
   createDynamicFormState(applications: any[]): DynamicFormState {
     if (!applications?.length) {
       throw new Error('No applications provided for dynamic form state.')
@@ -526,6 +678,10 @@ export class ApplicationBundleAPI {
     }
   }
 
+  /**
+   * Combina respuestas existentes con nuevas respuestas, por `questionId`.
+   * Las `newResponses` sobrescriben a las existentes si comparten `questionId`.
+   */
   mergeResponses(
     existingResponses: DynamicQuestionResponse[],
     newResponses: DynamicQuestionResponse[]
@@ -543,13 +699,20 @@ export class ApplicationBundleAPI {
     return Array.from(responseMap.values())
   }
 
+  /**
+   * Construye un grafo de dependencias de visibilidad:
+   * `questionIdDependencia -> [questionIdDependiente1, ...]`.
+   *
+   * Útil para invalidar/limpiar respuestas de preguntas que dependen de otra,
+   * cuando cambia la respuesta en la dependencia.
+   */
   buildVisibilityGraph(formState: DynamicFormState): Map<number, number[]> {
     const graph = new Map<number, number[]>()
 
-    formState.questionSections?.forEach((section) => {
-      section.questions.forEach((question) => {
+    formState.questionSections?.forEach((section: any) => {
+      section.questions.forEach((question: any) => {
         if (question.questionVisibilityRules?.length) {
-          question.questionVisibilityRules.forEach((rule) => {
+          question.questionVisibilityRules.forEach((rule: any) => {
             const dependencies = graph.get(rule.questionId) || []
             if (!dependencies.includes(question.questionId)) {
               dependencies.push(question.questionId)
@@ -563,6 +726,15 @@ export class ApplicationBundleAPI {
     return graph
   }
 
+  /**
+   * Obtiene todas las preguntas dependientes (directas y transitivas) de una pregunta.
+   *
+   * Incluye protección contra ciclos mediante `visited`.
+   *
+   * @param questionId ID de la pregunta raíz.
+   * @param graph Grafo construido por `buildVisibilityGraph`.
+   * @returns IDs de preguntas dependientes (sin duplicados).
+   */
   getDependentQuestions(
     questionId: number,
     graph: Map<number, number[]>,
