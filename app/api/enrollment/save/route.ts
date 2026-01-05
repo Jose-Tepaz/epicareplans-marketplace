@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { encrypt, getLastFour, detectCardBrand } from '@/lib/utils/encryption'
 import type { EnrollmentRequest } from '@/lib/types/enrollment'
+import { cookies } from 'next/headers'
 
 export async function POST(request: NextRequest) {
   try {
@@ -73,120 +74,157 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Obtener agent_id del usuario
-    const { data: userData } = await supabase
-      .from('users')
-      .select('agent_id, role')
-      .eq('id', user.id)
-      .single()
-
-    let agent_id = userData?.agent_id
-    console.log('👤 Usuario agent_id inicial:', agent_id)
-
-    // Si el usuario no tiene agente asignado, intentar asignarlo ahora
-    if (!agent_id && userData?.role === 'client') {
-      console.log('⚠️ Usuario no tiene agente asignado, buscando agente por defecto...')
+    // 2. Determinar assigned_agent_id para la aplicación
+    // Prioridad:
+    // 1. Si hay cookie agent_referral_code → usar ese agente
+    // 2. Si no hay cookie → usar agente por defecto (is_default = true)
+    
+    let assigned_agent_id: string | null = null
+    const cookieStore = await cookies()
+    const agentReferralCode = cookieStore.get('agent_referral_code')?.value
+    
+    console.log('🍪 Cookies disponibles:', {
+      hasAgentCookie: !!agentReferralCode,
+      agentReferralCode: agentReferralCode || 'no encontrada',
+      allCookies: cookieStore.getAll().map(c => c.name)
+    })
+    
+    if (agentReferralCode) {
+      // CASO 1: Cliente viene de un link de agente
+      console.log('🔗 Cookie de agente detectada:', agentReferralCode)
       
-      // Buscar agente por defecto directamente
-      const { data: defaultAgent } = await supabase
-        .from('agents')
-        .select('id')
-        .eq('agent_code', 'DEFAULT-ALLSTATE')
-        .eq('is_active', true)
-        .single()
+      // Usar función RPC para verificar el código (bypass RLS con SECURITY DEFINER)
+      const { data: verifyResult, error: verifyError } = await supabase
+        .rpc('verify_agent_code', {
+          link_code: agentReferralCode
+        })
       
-      if (defaultAgent) {
-        // Asignar agente al usuario
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({ agent_id: defaultAgent.id })
-          .eq('id', user.id)
-        
-        if (!updateError) {
-          agent_id = defaultAgent.id
-          console.log('✅ Agente por defecto asignado al usuario:', agent_id)
-        } else {
-          console.error('❌ Error asignando agente al usuario:', updateError)
-        }
+      console.log('🔍 Verificación de agente por código (RPC):', {
+        code: agentReferralCode,
+        result: verifyResult,
+        error: verifyError?.message
+      })
+      
+      // La función RPC retorna un array, tomar el primer resultado
+      const agentInfo = Array.isArray(verifyResult) && verifyResult.length > 0 
+        ? verifyResult[0] 
+        : null
+      
+      if (verifyError || !agentInfo || !agentInfo.is_valid) {
+        console.warn('⚠️ Agente no encontrado o inactivo por código:', agentReferralCode, {
+          error: verifyError?.message,
+          agentInfo: agentInfo
+        })
+        // Continuar con agente por defecto
       } else {
-        console.warn('⚠️ No se encontró agente DEFAULT-ALLSTATE')
+        assigned_agent_id = agentInfo.agent_id
+        console.log('✅ Agente asignado desde cookie:', {
+          agentId: assigned_agent_id,
+          businessName: agentInfo.business_name
+        })
       }
     }
-
-    // Si el usuario tiene agente pero es para otra compañía, buscar el correcto
-    if (agent_id && company_id) {
-      const { data: baseAgent } = await supabase
-        .from('agents')
-        .select('user_id, company_id')
-        .eq('id', agent_id)
-        .single()
+    
+    // CASO 2: No hay cookie o agente no encontrado → usar agente por defecto
+    // Usar función RPC para evitar restricciones RLS
+    if (!assigned_agent_id) {
+      console.log('🔍 Buscando agente por defecto...')
       
-      if (baseAgent?.user_id && baseAgent.company_id !== company_id) {
-        console.log('🔄 Agente del usuario es para otra compañía, buscando agente correcto...')
-        const { data: companyAgent } = await supabase
-          .from('agents')
-          .select('id')
-          .eq('user_id', baseAgent.user_id)
-          .eq('company_id', company_id)
-          .eq('is_active', true)
+      // Usar función RPC para obtener agente por defecto (bypass RLS con SECURITY DEFINER)
+      const { data: defaultAgentResult, error: defaultError } = await supabase
+        .rpc('get_default_agent')
+      
+      console.log('🔍 Búsqueda de agente por defecto (RPC):', {
+        result: defaultAgentResult,
+        error: defaultError?.message
+      })
+      
+      if (defaultError) {
+        console.error('❌ Error buscando agente por defecto:', {
+          error: defaultError?.message,
+          code: defaultError?.code,
+          details: defaultError?.details
+        })
+      }
+      
+      // La función RPC retorna un array, tomar el primer resultado
+      const defaultAgent = Array.isArray(defaultAgentResult) && defaultAgentResult.length > 0 
+        ? defaultAgentResult[0] 
+        : null
+      
+      if (defaultAgent && defaultAgent.agent_id) {
+        assigned_agent_id = defaultAgent.agent_id
+        console.log('✅ Agente por defecto asignado:', {
+          agentId: assigned_agent_id,
+          businessName: defaultAgent.business_name
+        })
+      } else {
+        console.warn('⚠️ No se encontró agente por defecto. Intentando obtener agente del usuario...')
+        
+        // Intentar obtener el agente asignado al usuario como fallback
+        const { data: userData } = await supabase
+          .from('users')
+          .select('agent_profile_id')
+          .eq('id', user.id)
           .single()
         
-        if (companyAgent) {
-          agent_id = companyAgent.id
-          console.log('✅ Agente encontrado para la compañía:', agent_id)
+        if (userData?.agent_profile_id) {
+          assigned_agent_id = userData.agent_profile_id
+          console.log('✅ Usando agente asignado al usuario como fallback:', assigned_agent_id)
+        } else {
+          console.error('❌ No se encontró ningún agente para asignar')
         }
       }
     }
-
-    // Fallback final: buscar agente por defecto de Allstate
-    if (!agent_id) {
-      console.log('🔄 Usando fallback: buscando agente DEFAULT-ALLSTATE...')
-      const { data: fallbackAgent } = await supabase
-        .from('agents')
-        .select('id')
-        .eq('agent_code', 'DEFAULT-ALLSTATE')
-        .eq('is_active', true)
-        .single()
-      
-      if (fallbackAgent) {
-        agent_id = fallbackAgent.id
-        console.log('✅ Usando agente por defecto (fallback):', agent_id)
-      } else if (process.env.DEFAULT_AGENT_ALLSTATE_ID) {
-        agent_id = process.env.DEFAULT_AGENT_ALLSTATE_ID
-        console.log('✅ Usando agente por defecto desde env:', agent_id)
-      } else {
-        console.error('❌ No se pudo encontrar ningún agente por defecto')
-      }
+    
+    console.log('👤 Assigned_agent_id final para application:', assigned_agent_id)
+    
+    if (!assigned_agent_id) {
+      console.error('⚠️ ADVERTENCIA: La aplicación se creará sin assigned_agent_id')
     }
-
-    console.log('👤 Agent_id final para application:', agent_id)
 
     // 3. Limpiar enrollment_data (sin datos de pago sensibles)
     const cleanEnrollmentData = { ...enrollmentData }
     delete cleanEnrollmentData.paymentInformation
 
     // 4. Crear application en estado pending_approval
+    const applicationData: any = {
+      user_id: user.id,
+      company_id: company_id,
+      status: 'pending_approval', // ← Estado inicial para revisión
+      carrier_name: carrierName,
+      zip_code: enrollmentData.demographics.zipCode,
+      email: enrollmentData.demographics.email,
+      address1: enrollmentData.demographics.address1,
+      address2: enrollmentData.demographics.address2,
+      city: enrollmentData.demographics.city,
+      state: enrollmentData.demographics.state,
+      phone: enrollmentData.demographics.phone,
+      alternate_phone: enrollmentData.demographics.alternatePhone,
+      zip_code_plus4: enrollmentData.demographics.zipCodePlus4,
+      enrollment_date: enrollmentData.enrollmentDate,
+      effective_date: enrollmentData.coverages[0]?.effectiveDate,
+      enrollment_data: cleanEnrollmentData, // Sin payment info
+    }
+    
+    // Incluir assigned_agent_id (puede ser null)
+    applicationData.assigned_agent_id = assigned_agent_id
+    if (assigned_agent_id) {
+      console.log('✅ assigned_agent_id incluido en applicationData:', assigned_agent_id)
+    } else {
+      console.warn('⚠️ assigned_agent_id es null, se incluirá como null en applicationData')
+    }
+    
+    console.log('📝 Application data a insertar:', {
+      user_id: applicationData.user_id,
+      company_id: applicationData.company_id,
+      assigned_agent_id: applicationData.assigned_agent_id || 'null',
+      status: applicationData.status
+    })
+    
     const { data: application, error: appError } = await supabase
       .from('applications')
-      .insert({
-        user_id: user.id,
-        company_id: company_id,
-        agent_id: agent_id,
-        status: 'pending_approval', // ← Estado inicial para revisión
-        carrier_name: carrierName,
-        zip_code: enrollmentData.demographics.zipCode,
-        email: enrollmentData.demographics.email,
-        address1: enrollmentData.demographics.address1,
-        address2: enrollmentData.demographics.address2,
-        city: enrollmentData.demographics.city,
-        state: enrollmentData.demographics.state,
-        phone: enrollmentData.demographics.phone,
-        alternate_phone: enrollmentData.demographics.alternatePhone,
-        zip_code_plus4: enrollmentData.demographics.zipCodePlus4,
-        enrollment_date: enrollmentData.enrollmentDate,
-        effective_date: enrollmentData.coverages[0]?.effectiveDate,
-        enrollment_data: cleanEnrollmentData, // Sin payment info
-      })
+      .insert(applicationData)
       .select()
       .single()
 
@@ -404,18 +442,14 @@ export async function POST(request: NextRequest) {
 
     console.log('Applicants created:', applicantsData.length)
 
-    // 7. Obtener agent_code si tenemos agent_id pero no agent_number
+    // 7. Obtener agent_code si tenemos assigned_agent_id pero no agent_number
+    // Nota: agent_code ya no existe en agent_profiles, usar un valor por defecto
     let agentCode: string | null = null
-    if (agent_id) {
-      const { data: agentData } = await supabase
-        .from('agents')
-        .select('agent_code')
-        .eq('id', agent_id)
-        .single()
-      
-      if (agentData?.agent_code) {
-        agentCode = agentData.agent_code
-      }
+    if (assigned_agent_id) {
+      // Si necesitamos un código de agente para la API externa, usar un valor por defecto
+      // o buscar en otra tabla si es necesario
+      agentCode = process.env.NEXT_PUBLIC_AGENT_NUMBER || "159208"
+      console.log('📝 Usando agent_code por defecto:', agentCode)
     }
 
     // 8. Guardar coverages con información COMPLETA (para visualización en dashboard)
@@ -432,7 +466,7 @@ export async function POST(request: NextRequest) {
       
       // Si aún no tenemos carrierName, intentar obtenerlo del carrierSlug
       if (!finalCarrierName) {
-        const carrierSlug = originalPlan?.carrierSlug || coverage.carrierSlug
+        const carrierSlug = originalPlan?.carrierSlug || (coverage as any).carrierSlug
         if (carrierSlug === 'allstate') {
           finalCarrierName = 'Allstate'
         } else if (carrierSlug === 'manhattan-life') {
