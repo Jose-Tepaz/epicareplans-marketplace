@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import logo from "@/public/images/epicare-logos.svg"
 import Image from "next/image"
+import { AgentHeaderInfo } from "@/components/agent-header-info"
 
 export function Header() {
   const { user, loading, signOut } = useAuth()
@@ -60,6 +61,7 @@ export function Header() {
 
           {/* Actions */}
           <div className="flex items-center gap-3">
+            <AgentHeaderInfo />
             {!loading && (
               <>
                 {user ? (
