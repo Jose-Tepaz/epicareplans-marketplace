@@ -2,6 +2,14 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 
+// Interface for agent profile
+interface AgentProfile {
+  is_valid: boolean
+  business_name: string | null
+  name?: string
+  agent_id: string
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
@@ -98,9 +106,11 @@ export async function GET(request: Request) {
             console.log('🔗 Código de agente detectado:', agentReferralCode)
             
             // Usar función RPC segura para verificar el código
-            const { data: agentVerification, error: agentError } = await supabase
+            const { data, error: agentError } = await supabase
               .rpc('verify_agent_code', { link_code: agentReferralCode })
               .maybeSingle()
+            
+            const agentVerification = data as AgentProfile | null
             
             if (agentError) {
               console.error('❌ Error verificando código de agente:', agentError)
@@ -186,8 +196,9 @@ export async function GET(request: Request) {
 
             // Limpiar cookie de referral después de usarla (solo si se asignó correctamente)
             if (agentReferralCode && agentProfileId && updatedUser?.agent_profile_id === agentProfileId) {
-              cookieStore.delete('agent_referral_code')
-              console.log('🧹 Cookie de referral limpiada')
+              // cookieStore.delete('agent_referral_code') // COMENTADO: Mantener cookie para enrollment
+              // console.log('🧹 Cookie de referral limpiada') // COMENTADO: No limpiar
+              console.log('🍪 Cookie de referral mantenida para enrollment posterior')
             }
           }
 

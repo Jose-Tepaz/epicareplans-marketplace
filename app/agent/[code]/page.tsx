@@ -11,6 +11,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
  * Captura el código único del agente y lo guarda en una cookie
  * Luego redirige al usuario al inicio del marketplace
  */
+interface AgentProfile {
+  is_valid: boolean
+  business_name: string | null
+  name?: string
+}
+
+/**
+ * Página de landing del agente
+ * Captura el código único del agente y lo guarda en una cookie
+ * Luego redirige al usuario al inicio del marketplace
+ */
 export default function AgentLandingPage() {
   const params = useParams()
   const router = useRouter()
@@ -29,14 +40,16 @@ export default function AgentLandingPage() {
       try {
         // Verificar que el agente existe y está activo usando función RPC
         const supabase = createClient()
-        const { data: agentProfile, error: agentError } = await supabase
+        const { data, error: agentError } = await supabase
           .rpc('verify_agent_code', { link_code: code })
           .maybeSingle()
+        
+        const agentProfile = data as AgentProfile | null
 
-        // Guardar el código del agente en una cookie que expire en 30 días
+        // Guardar el código del agente en una cookie que expire en 2 días
         // Lo guardamos siempre, el callback del servidor verificará al registrarse
         const expires = new Date()
-        expires.setTime(expires.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 días
+        expires.setTime(expires.getTime() + 2 * 24 * 60 * 60 * 1000) // 2 días
         document.cookie = `agent_referral_code=${code}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`
 
         if (agentError) {

@@ -73,9 +73,9 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Si la operación fue exitosa, limpiar la cookie
+    // Si la operación fue exitosa, no limpiar la cookie para que persista para el enrollment
     if (result && result.success) {
-      cookieStore.delete('agent_referral_code')
+      // cookieStore.delete('agent_referral_code') // COMENTADO: Mantener cookie para enrollment
       console.log('✅ Agente asignado a cliente existente:', {
         client_id: user.id,
         agent_profile_id: result.agent_profile_id,
