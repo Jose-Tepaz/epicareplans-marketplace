@@ -82,7 +82,7 @@ export function DebugCartPlans() {
                       <strong>Campos disponibles:</strong>
                       <ul className="list-disc list-inside ml-2">
                         {Object.keys(plan).map(key => (
-                          <li key={key}>{key}: {typeof plan[key] === 'object' ? JSON.stringify(plan[key]) : String(plan[key])}</li>
+                          <li key={key}>{key}: {typeof (plan as any)[key] === 'object' ? JSON.stringify((plan as any)[key]) : String((plan as any)[key])}</li>
                         ))}
                       </ul>
                     </div>

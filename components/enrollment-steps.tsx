@@ -372,7 +372,7 @@ export function Step4AdditionalApplicants({ formData, updateFormData }: {
   }
 
   const removeApplicant = (index: number) => {
-    updateFormData('additionalApplicants', formData.additionalApplicants.filter((_, i) => i !== index))
+    updateFormData('additionalApplicants', formData.additionalApplicants.filter((_: any, i: number) => i !== index))
   }
 
   return (
@@ -395,7 +395,7 @@ export function Step4AdditionalApplicants({ formData, updateFormData }: {
       {/* List existing additional applicants */}
       {formData.additionalApplicants.length > 0 && (
         <div className="space-y-3">
-          {formData.additionalApplicants.map((applicant, index) => (
+          {formData.additionalApplicants.map((applicant: Applicant, index: number) => (
             <Card key={index}>
               <CardContent className="p-4">
                 <div className="flex justify-between items-start">

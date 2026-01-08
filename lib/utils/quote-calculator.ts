@@ -73,10 +73,11 @@ export async function recalculateQuotes(
 
     // Mapear dependents con formato correcto
     const dependents = familyMembers.map(member => {
-      const dob = normalizeDate(member.date_of_birth || member.dob || "")
+      const m = member as any
+      const dob = normalizeDate(member.date_of_birth || m.dob || "")
       return {
-        firstName: member.first_name || member.firstName || "",
-        lastName: member.last_name || member.lastName || "",
+        firstName: member.first_name || m.firstName || "",
+        lastName: member.last_name || m.lastName || "",
         dateOfBirth: dob,
         gender: normalizeGender(member.gender || ""),
         relationship: member.relationship || "Dependent",
@@ -137,7 +138,7 @@ export async function recalculateQuotes(
     // Intentamos encontrar el plan equivalente en los nuevos resultados
     const updatedPlans = currentPlans.map(currentPlan => {
       // Buscar coincidencia por ID o planKey/productCode
-      const matchingNewPlan = normalizedNewPlans.find(newPlan => {
+      const matchingNewPlan = normalizedNewPlans.find((newPlan: InsurancePlan) => {
         // Coincidencia exacta de ID
         if (newPlan.id === currentPlan.id) return true
         

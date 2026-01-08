@@ -188,13 +188,11 @@ export default function ExplorePage() {
         
         // Guardar datos en session storage para insurance-options
         saveExploreDataToSession({
-          zipCode: profile.zip_code,
-          dateOfBirth: profile.date_of_birth,
+          zip_code: profile.zip_code,
+          date_of_birth: profile.date_of_birth,
           gender: profile.gender,
-          smokes: profile.is_smoker,
-          lastTobaccoUse: profile.last_tobacco_use || '',
-          coverageStartDate: profile.coverage_start_date,
-          paymentFrequency: profile.payment_frequency
+          is_smoker: profile.is_smoker,
+          last_tobacco_use: profile.last_tobacco_use || ''
         })
         
         console.log('💾 Datos guardados en sessionStorage')

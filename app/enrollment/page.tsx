@@ -164,11 +164,11 @@ export default function EnrollmentPage() {
               console.log('✅ Family members activos para enrollment:', activeMembers.length)
               
               // Convertir family members a formato Applicant
-              const additionalApplicants = activeMembers.map((member, index) => 
+              const additionalApplicants = activeMembers.map((member: any, index: number) => 
                 familyMemberToApplicant(member, index)
               )
               
-              setFormData(prev => ({
+              setFormData((prev: any) => ({
                 ...prev,
                 additionalApplicants
               }))
@@ -182,7 +182,7 @@ export default function EnrollmentPage() {
           
           if (userProfile) {
             console.log('✅ Perfil del usuario encontrado:', userProfile)
-            setFormData(prev => ({
+            setFormData((prev: any) => ({
               ...prev,
               email: userProfile.email || prev.email,
               firstName: userProfile.first_name || prev.firstName,
@@ -217,7 +217,7 @@ export default function EnrollmentPage() {
             console.log('✅ Última aplicación encontrada, autocompletando datos...')
             const enrollmentData = lastApplication.enrollment_data
             
-            setFormData(prev => ({
+            setFormData((prev: any) => ({
               ...prev,
               // Datos personales
               firstName: enrollmentData.demographics?.applicants?.[0]?.firstName || prev.firstName,
@@ -255,25 +255,25 @@ export default function EnrollmentPage() {
       if (savedData && !user?.id) {
         const parsedData = JSON.parse(savedData)
         console.log('🔍 Cargando datos de sessionStorage:', parsedData)
-        setFormData(prev => ({ ...prev, ...parsedData }))
+        setFormData((prev: any) => ({ ...prev, ...parsedData }))
       }
 
       // 3. Usar email del usuario autenticado si no hay datos
       if (user?.email && !savedData) {
         console.log('✅ Usuario autenticado, usando email:', user.email)
-        setFormData(prev => ({ ...prev, email: user.email || prev.email }))
+        setFormData((prev: any) => ({ ...prev, email: user.email || prev.email }))
       }
 
     // Cargar ZIP code del explore page
     if (userZipCode) {
-      setFormData(prev => ({ ...prev, zipCode: userZipCode }))
+      setFormData((prev: any) => ({ ...prev, zipCode: userZipCode }))
       console.log('ZIP code cargado del localStorage:', userZipCode)
     }
 
     // Pre-fill from insurance form if available
     if (insuranceFormData) {
       const insuranceData = JSON.parse(insuranceFormData)
-      setFormData(prev => ({
+      setFormData((prev: any) => ({
         ...prev,
         zipCode: insuranceData.zipCode || prev.zipCode,
         dateOfBirth: insuranceData.dateOfBirth || prev.dateOfBirth,
@@ -298,7 +298,7 @@ export default function EnrollmentPage() {
   }, [formData])
 
   const updateFormData = (field: keyof EnrollmentFormState, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData((prev: any) => ({ ...prev, [field]: value }))
   }
 
   // Validation functions for each step
@@ -385,7 +385,7 @@ export default function EnrollmentPage() {
 
       case 7: // Beneficiaries (antes Paso 6)
         if (formData.beneficiaries.length > 0) {
-          const totalAllocation = formData.beneficiaries.reduce((sum, ben) => sum + ben.allocationPercentage, 0)
+          const totalAllocation = formData.beneficiaries.reduce((sum: number, ben: any) => sum + ben.allocationPercentage, 0)
           if (totalAllocation !== 100) {
             return { isValid: false, message: 'Beneficiary allocation must total 100%' }
           }
@@ -452,7 +452,7 @@ export default function EnrollmentPage() {
       // Por lo tanto, podemos usar directamente dataToUse.additionalApplicants
       
       // Convertir additionalApplicants a formato FamilyMember para Rate/Cart
-      const familyMembers: FamilyMember[] = dataToUse.additionalApplicants.map(app => ({
+      const familyMembers: FamilyMember[] = dataToUse.additionalApplicants.map((app: any) => ({
         first_name: app.firstName,
         last_name: app.lastName,
         date_of_birth: app.dob, // Ya está en formato YYYY-MM-DD o ISO
@@ -580,7 +580,7 @@ export default function EnrollmentPage() {
       // En este paso, los 'additionalApplicants' son los que el usuario ha confirmado
       // formData.additionalApplicants ya contiene SOLO los miembros activos (marcados para quoting)
       console.log('📋 Estado actual de additionalApplicants antes de recalcular:', formData.additionalApplicants.length)
-      console.log('📋 Detalles de additionalApplicants:', formData.additionalApplicants.map(app => ({
+      console.log('📋 Detalles de additionalApplicants:', formData.additionalApplicants.map((app: any) => ({
         name: `${app.firstName} ${app.lastName}`,
         relationship: app.relationship,
         dob: app.dob
@@ -942,7 +942,7 @@ export default function EnrollmentPage() {
     
     // Validar beneficiaries allocation
     if (data.beneficiaries.length > 0) {
-      const totalAllocation = data.beneficiaries.reduce((sum, ben) => sum + ben.allocationPercentage, 0)
+      const totalAllocation = data.beneficiaries.reduce((sum: number, ben: any) => sum + ben.allocationPercentage, 0)
       if (totalAllocation !== 100) {
         errors.push(`Beneficiary allocation must equal 100% (current: ${totalAllocation}%)`)
       }
@@ -1006,7 +1006,7 @@ export default function EnrollmentPage() {
         }],
         questionResponses: primaryQuestionResponses
       },
-      ...data.additionalApplicants.map((app, index) => {
+      ...data.additionalApplicants.map((app: any, index: number) => {
         // Para additional applicants, usar sus questionResponses o copiar del primary
         const appQuestionResponses = app.questionResponses && app.questionResponses.length > 0 
           ? app.questionResponses 
@@ -1082,7 +1082,7 @@ export default function EnrollmentPage() {
     }
 
     // Construir coverages según carrier
-    const coverages = plansToUse.map(plan => {
+    const coverages = plansToUse.map((plan: any) => {
       console.log('🔍 Plan data for coverage:', {
         id: plan.id,
         planKey: plan.planKey,
@@ -1130,7 +1130,7 @@ export default function EnrollmentPage() {
               applicantId: "primary-001"
             }
           ],
-          beneficiaries: data.beneficiaries.map((ben, index) => ({
+          beneficiaries: data.beneficiaries.map((ben: any, index: number) => ({
             beneficiaryId: index + 1,
             firstName: ben.firstName,
             middleName: ben.middleName,

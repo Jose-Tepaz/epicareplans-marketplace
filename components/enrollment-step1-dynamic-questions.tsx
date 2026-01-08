@@ -64,7 +64,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
       isPrimary: true,
       index: -1
     },
-    ...(formData.additionalApplicants || []).map((app, index) => ({
+    ...(formData.additionalApplicants || []).map((app: any, index: number) => ({
       id: `additional-${index}`,
       name: `${app.firstName || 'Additional'} ${app.lastName || 'Applicant'}`.trim(),
       relationship: app.relationship || 'Dependent',
@@ -159,7 +159,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
         paymentFrequency: formData.paymentFrequency || "Monthly", // Usar frecuencia de pago del formulario
         memberCount: 1 + (formData.additionalApplicants?.length || 0), // Usuario principal + adicionales
         isSmoker: formData.smoker || false, // Usar información del fumador del formulario
-        hasHealthConditions: formData.questionResponses?.some(r => r.response === 'Yes') || false, // Detectar condiciones de salud
+        hasHealthConditions: formData.questionResponses?.some((r: any) => r.response === 'Yes') || false, // Detectar condiciones de salud
         weight: Number(formData.weight) || undefined, // Peso del usuario
         heightFeet: Number(formData.heightFeet) || undefined, // Altura en pies
         heightInches: Number(formData.heightInches) || undefined, // Altura en pulgadas
@@ -171,7 +171,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
       console.log('FormData completo:', formData);
       console.log('Estado del usuario:', formData.state);
       console.log('Estado que se enviará:', state);
-      console.log('Análisis de planes seleccionados:', formData.selectedPlans.map(plan => ({
+      console.log('Análisis de planes seleccionados:', formData.selectedPlans.map((plan: any) => ({
         id: plan.id,
         name: plan.name,
         productCode: plan.productCode,
@@ -207,7 +207,7 @@ export function Step1DynamicQuestions({ formData, updateFormData, onValidationCh
         let finalErrorMessage = ''
         
         // Función helper para verificar si un texto contiene error de fecha
-        const checkDateError = (text) => {
+        const checkDateError = (text: any) => {
           if (typeof text !== 'string') return false
           return text.includes('Effective date must be today or later') || 
                  text.includes('fecha') ||

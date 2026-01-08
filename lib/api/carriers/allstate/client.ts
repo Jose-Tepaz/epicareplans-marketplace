@@ -174,7 +174,7 @@ class AllstateAPI {
         coverage: plan.benefitDescription || 'No coverage description',
         productType: plan.productType || 'Unknown',
         benefits: Array.isArray(plan.benefits)
-          ? plan.benefits.map((benefit) => benefit.name || 'Unknown benefit')
+          ? plan.benefits.map((benefit: any) => benefit.name || 'Unknown benefit')
           : [],
         allState: true,
         planType: plan.planType || 'Unknown',

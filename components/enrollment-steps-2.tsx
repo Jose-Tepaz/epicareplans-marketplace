@@ -23,7 +23,7 @@ export function Step5Coverage({ formData, updateFormData }: {
       <div className="bg-blue-50 p-4 rounded-lg">
         <h4 className="font-semibold mb-3">Selected Plans from Cart</h4>
         <div className="space-y-3">
-          {formData.selectedPlans.map((plan, index) => (
+          {formData.selectedPlans.map((plan: any, index: number) => (
             <div key={index} className="bg-white p-4 rounded border">
               <div className="flex justify-between items-start">
                 <div>
@@ -45,7 +45,7 @@ export function Step5Coverage({ formData, updateFormData }: {
         <div className="flex justify-between items-center">
           <span className="font-semibold">Total Monthly Premium</span>
           <span className="text-2xl font-bold text-primary">
-            ${formData.selectedPlans.reduce((sum, plan) => sum + plan.price, 0).toFixed(2)}
+            ${formData.selectedPlans.reduce((sum: number, plan: any) => sum + plan.price, 0).toFixed(2)}
           </span>
         </div>
       </div>
@@ -167,10 +167,10 @@ export function Step6Beneficiaries({ formData, updateFormData }: {
   }
 
   const removeBeneficiary = (index: number) => {
-    updateFormData('beneficiaries', formData.beneficiaries.filter((_, i) => i !== index))
+    updateFormData('beneficiaries', formData.beneficiaries.filter((_: any, i: number) => i !== index))
   }
 
-  const totalAllocation = formData.beneficiaries.reduce((sum, ben) => sum + ben.allocationPercentage, 0)
+  const totalAllocation = formData.beneficiaries.reduce((sum: number, ben: any) => sum + ben.allocationPercentage, 0)
 
   return (
     <div className="space-y-6">
@@ -198,7 +198,7 @@ export function Step6Beneficiaries({ formData, updateFormData }: {
       {/* List existing beneficiaries */}
       {formData.beneficiaries.length > 0 && (
         <div className="space-y-3">
-          {formData.beneficiaries.map((beneficiary, index) => (
+          {formData.beneficiaries.map((beneficiary: Beneficiary, index: number) => (
             <Card key={index}>
               <CardContent className="p-4">
                 <div className="flex justify-between items-start">
@@ -434,7 +434,7 @@ export function Step7HealthQuestions({ formData, updateFormData }: {
   }
 
   const removeMedication = (index: number) => {
-    updateFormData('medications', formData.medications.filter((_, i) => i !== index))
+    updateFormData('medications', formData.medications.filter((_: any, i: number) => i !== index))
   }
 
   return (
@@ -463,7 +463,7 @@ export function Step7HealthQuestions({ formData, updateFormData }: {
       {/* List existing medications */}
       {formData.medications.length > 0 && (
         <div className="space-y-3">
-          {formData.medications.map((medication, index) => (
+          {formData.medications.map((medication: Medication, index: number) => (
             <Card key={index}>
               <CardContent className="p-4">
                 <div className="flex justify-between items-start">
@@ -471,7 +471,7 @@ export function Step7HealthQuestions({ formData, updateFormData }: {
                     <h4 className="font-semibold">{medication.genericName}</h4>
                     <p className="text-sm text-gray-600">Dosage: {medication.dosage} - {medication.frequency}</p>
                     <p className="text-sm text-gray-500">Reason: {medication.rxReason}</p>
-                    <p className="text-sm text-gray-500">Prescribed: {new Date(medication.originalRXDate).toLocaleDateString()}</p>
+                    <p className="text-sm text-gray-500">Prescribed: {new Date(medication.originalRXDate as string).toLocaleDateString()}</p>
                     <p className="text-sm font-medium mt-1">
                       {medication.isActivelyTaking ? (
                         <span className="text-green-600">Currently taking</span>

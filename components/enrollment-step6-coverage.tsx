@@ -18,7 +18,7 @@ export function Step6Coverage({ formData, updateFormData }: Step6CoverageProps) 
       <div className="bg-blue-50 p-4 rounded-lg">
         <h4 className="font-semibold mb-3">Selected Plans from Cart</h4>
         <div className="space-y-3">
-          {formData.selectedPlans.map((plan, index) => (
+          {formData.selectedPlans.map((plan: any, index: number) => (
             <div key={index} className="bg-white p-4 rounded border">
               <div className="flex justify-between items-start">
                 <div>
@@ -40,7 +40,7 @@ export function Step6Coverage({ formData, updateFormData }: Step6CoverageProps) 
         <div className="flex justify-between items-center">
           <span className="font-semibold">Total Monthly Premium</span>
           <span className="text-2xl font-bold text-primary">
-            ${formData.selectedPlans.reduce((sum, plan) => sum + plan.price, 0).toFixed(2)}
+            ${formData.selectedPlans.reduce((sum: number, plan: any) => sum + plan.price, 0).toFixed(2)}
           </span>
         </div>
       </div>

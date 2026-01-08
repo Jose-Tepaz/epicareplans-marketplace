@@ -41,7 +41,7 @@ export function EnrollmentLayout({
       {/* Left Sidebar */}
       <EnrollmentSidebar 
         selectedPlans={formData.selectedPlans}
-        totalPrice={formData.selectedPlans.reduce((sum, plan) => sum + plan.price, 0)}
+        totalPrice={formData.selectedPlans.reduce((sum: number, plan: any) => sum + plan.price, 0)}
       />
 
       {/* Main Content Area */}

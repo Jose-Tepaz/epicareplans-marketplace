@@ -374,7 +374,7 @@ export function Step9Review({ formData, updateFormData, onEditStep }: {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {formData.additionalApplicants.map((applicant, index) => (
+            {formData.additionalApplicants.map((applicant: any, index: number) => (
               <div key={index} className="border-b pb-2 last:border-0">
                 <p className="font-medium">{applicant.firstName} {applicant.lastName}</p>
                 <p className="text-sm text-gray-600">{applicant.relationship} - DOB: {new Date(applicant.dob).toLocaleDateString()}</p>
@@ -394,7 +394,7 @@ export function Step9Review({ formData, updateFormData, onEditStep }: {
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
-          {formData.selectedPlans.map((plan, index) => (
+          {formData.selectedPlans.map((plan: any, index: number) => (
             <div key={index} className="border-b pb-3 last:border-0">
               <div className="flex justify-between items-start">
                 <div>
@@ -409,7 +409,7 @@ export function Step9Review({ formData, updateFormData, onEditStep }: {
           <div className="flex justify-between items-center">
             <span className="font-semibold">Total Monthly Premium</span>
             <span className="text-xl font-bold text-primary">
-              ${formData.selectedPlans.reduce((sum, plan) => sum + plan.price, 0).toFixed(2)}
+              ${formData.selectedPlans.reduce((sum: number, plan: any) => sum + plan.price, 0).toFixed(2)}
             </span>
           </div>
           <div className="text-sm text-gray-600 space-y-1">
@@ -430,7 +430,7 @@ export function Step9Review({ formData, updateFormData, onEditStep }: {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {formData.beneficiaries.map((beneficiary, index) => (
+            {formData.beneficiaries.map((beneficiary: any, index: number) => (
               <div key={index} className="border-b pb-2 last:border-0">
                 <div className="flex justify-between items-start">
                   <div>
@@ -456,7 +456,7 @@ export function Step9Review({ formData, updateFormData, onEditStep }: {
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
-            {formData.medications.map((medication, index) => (
+            {formData.medications.map((medication: any, index: number) => (
               <div key={index} className="border-b pb-2 last:border-0">
                 <p className="font-medium">{medication.genericName}</p>
                 <p className="text-sm text-gray-600">{medication.dosage} - {medication.frequency}</p>

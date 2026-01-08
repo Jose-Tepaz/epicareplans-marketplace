@@ -228,6 +228,7 @@ export default function InsuranceOptionsPage() {
             lastTobaccoUse: e.last_tobacco_use || "",
             coverageStartDate: "",
             paymentFrequency: "",
+            state: e.state || "",
           };
           console.log("Mapped form data from explore_data:", mapped);
           setFormData(mapped);
@@ -610,7 +611,7 @@ export default function InsuranceOptionsPage() {
           cartItems.forEach(cartItem => {
             // Find the updated plan in the new results
             // Match by ID, but also check productCode/planKey just in case
-            const updatedPlan = normalizedPlans.find(p => p.id === cartItem.id);
+            const updatedPlan = normalizedPlans.find((p: any) => p.id === cartItem.id);
             
             if (updatedPlan) {
               const currentPrice = cartItem.price;
@@ -1127,7 +1128,7 @@ export default function InsuranceOptionsPage() {
         isOpen={isEditModalOpen}
         onOpenChange={setIsEditModalOpen}
         formData={formData}
-        onFormDataChange={setFormData}
+        onFormDataChange={(newData) => setFormData(prev => ({ ...prev, ...newData }))}
         isUpdating={isUpdating}
         error={error}
         onUpdate={handleUpdateInformation}
