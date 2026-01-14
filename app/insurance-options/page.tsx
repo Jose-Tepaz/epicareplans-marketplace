@@ -150,45 +150,66 @@ export default function InsuranceOptionsPage() {
     // Only run on client side to avoid hydration issues
     if (!isClient) return;
     
+    // Helper para leer cookies en cliente
+    const getCookie = (name: string) => {
+      const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+      return match ? match[2] : null;
+    };
+
     // Cargar planes y configuración desde sessionStorage al inicio
     console.log("🔄 [INIT] Loading stored plans from sessionStorage");
 
-    const storedPlans = sessionStorage.getItem("insurancePlans");
-    const storedAgentProducts = sessionStorage.getItem("manhattanLifeAgentProducts");
+    const currentAgentCookie = getCookie("agent_referral_code");
+    const storedLastAgent = sessionStorage.getItem("lastUsedAgentCode");
+    
+    // Si la cookie actual es diferente a la guardada, invalidar cache
+    const normalize = (val: string | null) => val || "default-or-empty";
+    if (normalize(currentAgentCookie) !== normalize(storedLastAgent)) {
+        console.log("⚠️ [INIT] Agent context changed (Cookie vs Storage). Invalidating cache.");
+        console.log(`   Old: ${storedLastAgent}, New: ${currentAgentCookie}`);
+        sessionStorage.removeItem("insurancePlans");
+        sessionStorage.removeItem("manhattanLifeAgentProducts");
+        sessionStorage.removeItem("lastUsedAgentCode");
+        sessionStorage.removeItem("lastFetchPayloadKey");
+        // No return here, let it fall through to empty state initialization
+    } else {
+        const storedPlans = sessionStorage.getItem("insurancePlans");
+        const storedAgentProducts = sessionStorage.getItem("manhattanLifeAgentProducts");
 
-    if (storedPlans) {
-      try {
-        const plans = JSON.parse(storedPlans);
-        console.log("💾 [INIT] Found stored plans:", plans.length, "plans");
-
-        if (Array.isArray(plans) && plans.length > 0) {
-          const normalized = plans.map(normalizeInsurancePlan);
-          setInsurancePlans(normalized);
-          setCurrentPage(1);
-          console.log("✅ [INIT] Loaded", normalized.length, "plans from storage");
-        } else {
-          console.log("⚠️  [INIT] Stored plans array is empty");
-        }
-
-        if (storedAgentProducts) {
+        if (storedPlans) {
           try {
-            const parsedProducts = JSON.parse(storedAgentProducts);
-            if (Array.isArray(parsedProducts)) {
-              setManhattanLifeAgentProducts(normalizeAgentProducts(parsedProducts));
+            const plans = JSON.parse(storedPlans);
+            console.log("💾 [INIT] Found stored plans:", plans.length, "plans");
+
+            if (Array.isArray(plans) && plans.length > 0) {
+              const normalized = plans.map(normalizeInsurancePlan);
+              setInsurancePlans(normalized);
+              setCurrentPage(1);
+              console.log("✅ [INIT] Loaded", normalized.length, "plans from storage");
+            } else {
+              console.log("⚠️  [INIT] Stored plans array is empty");
+            }
+
+            if (storedAgentProducts) {
+              try {
+                const parsedProducts = JSON.parse(storedAgentProducts);
+                if (Array.isArray(parsedProducts)) {
+                  setManhattanLifeAgentProducts(normalizeAgentProducts(parsedProducts));
+                } else {
+                  setManhattanLifeAgentProducts([]);
+                }
+              } catch {
+                setManhattanLifeAgentProducts([]);
+              }
             } else {
               setManhattanLifeAgentProducts([]);
             }
-          } catch {
-            setManhattanLifeAgentProducts([]);
+            setLoading(false);
+            return;
+          } catch (error) {
+            console.error("❌ [INIT] Error parsing stored plans:", error);
           }
-        } else {
-          setManhattanLifeAgentProducts([]);
         }
-        setLoading(false);
-        return;
-      } catch (error) {
-        console.error("❌ [INIT] Error parsing stored plans:", error);
-      }
     }
 
     // Si no hay planes almacenados, inicializamos vacío pero mantenemos loading true
@@ -448,10 +469,18 @@ export default function InsuranceOptionsPage() {
           setError(null);
           
           try {
+            const currentCookie = document.cookie.match(new RegExp('(^| )agent_referral_code=([^;]+)'));
+            const agentCodeToStore = currentCookie ? currentCookie[2] : null;
+
             sessionStorage.setItem("insurancePlans", JSON.stringify(normalizedPlans));
             sessionStorage.setItem("insuranceFormData", JSON.stringify(payload));
             sessionStorage.setItem("manhattanLifeAgentProducts", JSON.stringify(mlProducts));
             sessionStorage.setItem("lastFetchPayloadKey", payloadKey);
+            if (agentCodeToStore) {
+                 sessionStorage.setItem("lastUsedAgentCode", agentCodeToStore);
+            } else {
+                 sessionStorage.removeItem("lastUsedAgentCode");
+            }
           } catch (e) {
             console.warn("Failed to save to sessionStorage", e);
           }
@@ -591,10 +620,18 @@ export default function InsuranceOptionsPage() {
           "insurancePlans",
           JSON.stringify(normalizedPlans)
         );
+        const currentCookie = document.cookie.match(new RegExp('(^| )agent_referral_code=([^;]+)'));
+        const agentCodeToStore = currentCookie ? currentCookie[2] : null;
+
         sessionStorage.setItem(
           "manhattanLifeAgentProducts",
           JSON.stringify(mlProducts)
         );
+        if (agentCodeToStore) {
+             sessionStorage.setItem("lastUsedAgentCode", agentCodeToStore);
+        } else {
+             sessionStorage.removeItem("lastUsedAgentCode");
+        }
 
         // Update state
         setFormData(payloadForRequest);

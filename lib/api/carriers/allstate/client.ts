@@ -16,10 +16,10 @@ class AllstateAPI {
       'https://qa1-ngahservices.ngic.com/QuotingAPI/api/v1/Rate/AllPlans'
     this.authToken =
       process.env.ALLSTATE_AUTH_TOKEN || 'VGVzdFVzZXI6VGVzdDEyMzQ='
-    this.agentId = process.env.ALLSTATE_AGENT_ID || '159208'
+    this.agentId = '' // No environment fallback allowed by user policy. Must be provided by caller (DB).
   }
 
-  buildQuoteRequest(formData: InsuranceFormData & { dependents?: any[] }): AllstateQuoteRequest {
+  buildQuoteRequest(formData: InsuranceFormData & { dependents?: any[] }, agentId?: string): AllstateQuoteRequest {
     const effectiveDate = new Date(formData.coverageStartDate).toISOString()
     const birthDate = new Date(formData.dateOfBirth).toISOString()
 
@@ -95,8 +95,13 @@ class AllstateAPI {
     // Construct the payload exactly as requested, removing extra fields
     // Note: 'productTypes' was removed as it wasn't in the user's example
     // Note: 'PlansToRate' and 'ExcludeAvailablePlans' were removed
+    const finalAgentId = agentId || this.agentId
+    if (!finalAgentId) {
+      throw new Error('Allstate Agent ID is required and was not provided from database (no referral code or default agent found).')
+    }
+
     const requestPayload = {
-      agentId: this.agentId,
+      agentId: finalAgentId,
       effectiveDate,
       zipCode: formData.zipCode,
       applicants,
@@ -190,14 +195,17 @@ class AllstateAPI {
     })
   }
 
-  async getInsuranceQuotes(formData: InsuranceFormData & { dependents?: any[] }): Promise<InsurancePlan[]> {
-    const requestData = this.buildQuoteRequest(formData)
+  async getInsuranceQuotes(formData: InsuranceFormData & { dependents?: any[] }, agentId?: string): Promise<InsurancePlan[]> {
+    const requestData = this.buildQuoteRequest(formData, agentId)
 
+    const finalId = agentId || this.agentId;
+    console.log('⚡ [CLIENT] getInsuranceQuotes usando AgentID:', finalId || "UNDEFINED/EMPTY");
+ 
     console.log('Sending request to Allstate API:', {
       url: this.baseURL,
       requestData,
       authToken: this.authToken ? 'Present' : 'Missing',
-      agentId: this.agentId,
+      agentId: finalId,
     })
 
     const response = await fetch(this.baseURL, {
