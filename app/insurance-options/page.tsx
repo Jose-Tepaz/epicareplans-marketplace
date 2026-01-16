@@ -73,6 +73,14 @@ export default function InsuranceOptionsPage() {
     state: "",
   });
 
+  const getCookie = (name: string) => {
+    if (typeof document === "undefined") return null;
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop()?.split(';').shift() || null;
+    return null;
+  };
+
   const normalizeAgentProducts = (products: any[]): string[] => {
     return Array.from(
       new Set(
@@ -150,27 +158,28 @@ export default function InsuranceOptionsPage() {
     // Only run on client side to avoid hydration issues
     if (!isClient) return;
     
-    // Helper para leer cookies en cliente
-    const getCookie = (name: string) => {
-      const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-      return match ? match[2] : null;
-    };
-
     // Cargar planes y configuración desde sessionStorage al inicio
     console.log("🔄 [INIT] Loading stored plans from sessionStorage");
 
     const currentAgentCookie = getCookie("agent_referral_code");
     const storedLastAgent = sessionStorage.getItem("lastUsedAgentCode");
     
-    // Si la cookie actual es diferente a la guardada, invalidar cache
-    const normalize = (val: string | null) => val || "default-or-empty";
-    if (normalize(currentAgentCookie) !== normalize(storedLastAgent)) {
-        console.log("⚠️ [INIT] Agent context changed (Cookie vs Storage). Invalidating cache.");
-        console.log(`   Old: ${storedLastAgent}, New: ${currentAgentCookie}`);
+    // Normalización: tratar null, undefined y "" como iguales
+    const normalize = (val: string | null | undefined) => (val || "").trim();
+
+    console.log(`🕵️ [CACHE CHECK] Agent Context Check:`);
+    console.log(`   - Cookie (Current): "${currentAgentCookie || 'null'}"`);
+    console.log(`   - Storage (Last):   "${storedLastAgent || 'null'}"`);
+
+    const isContextChanged = normalize(currentAgentCookie) !== normalize(storedLastAgent);
+
+    if (isContextChanged) {
+        console.warn("⚠️ [INIT] Context changed! Invalidating cached plans to force refresh.");
         sessionStorage.removeItem("insurancePlans");
         sessionStorage.removeItem("manhattanLifeAgentProducts");
         sessionStorage.removeItem("lastUsedAgentCode");
         sessionStorage.removeItem("lastFetchPayloadKey");
+        // No return here, let it fall through to empty state initialization
         // No return here, let it fall through to empty state initialization
     } else {
         const storedPlans = sessionStorage.getItem("insurancePlans");
@@ -469,8 +478,7 @@ export default function InsuranceOptionsPage() {
           setError(null);
           
           try {
-            const currentCookie = document.cookie.match(new RegExp('(^| )agent_referral_code=([^;]+)'));
-            const agentCodeToStore = currentCookie ? currentCookie[2] : null;
+            const agentCodeToStore = getCookie("agent_referral_code");
 
             sessionStorage.setItem("insurancePlans", JSON.stringify(normalizedPlans));
             sessionStorage.setItem("insuranceFormData", JSON.stringify(payload));
@@ -620,8 +628,7 @@ export default function InsuranceOptionsPage() {
           "insurancePlans",
           JSON.stringify(normalizedPlans)
         );
-        const currentCookie = document.cookie.match(new RegExp('(^| )agent_referral_code=([^;]+)'));
-        const agentCodeToStore = currentCookie ? currentCookie[2] : null;
+        const agentCodeToStore = getCookie("agent_referral_code");
 
         sessionStorage.setItem(
           "manhattanLifeAgentProducts",
