@@ -94,12 +94,27 @@ export async function POST(request: NextRequest) {
       hasMedicare: requestData.hasMedicare
     });
 
+    // Resolución de Agent ID
+    console.log('Resolving Allstate Agent ID...');
+    const { resolveAllstateAgentId } = await import('@/lib/helpers/allstate-agent-resolution');
+    const allstateAgentId = await resolveAllstateAgentId();
+
+    if (!allstateAgentId) {
+      console.error('❌ Failed to resolve Allstate Agent ID (Application Bundle)');
+      return NextResponse.json(
+        { error: 'Agent ID not found', message: 'Could not determine a valid Allstate Agent ID for this session.' },
+        { status: 400 }
+      );
+    }
+    console.log('✅ Resolved Agent ID for Application Bundle:', allstateAgentId);
+
     // Llamar al ApplicationBundle API
     console.log('Calling applicationBundleAPI.getApplicationBundle...');
     const applicationBundle = await allstate.applicationBundleAPI.getApplicationBundle(
       requestData.selectedPlans,
       requestData.state,
       requestData.effectiveDate,
+      allstateAgentId, // Pasamos el ID resuelto
       requestData.dateOfBirth,
       requestData.isSmoker,
       requestData.hasHealthConditions,

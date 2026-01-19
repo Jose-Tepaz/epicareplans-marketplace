@@ -30,7 +30,6 @@ import {
 export class ApplicationBundleAPI {
   private baseURL: string
   private authToken: string
-  private agentId: string
 
   /**
    * Inicializa el cliente usando variables de entorno y valores por defecto (QA).
@@ -44,7 +43,7 @@ export class ApplicationBundleAPI {
       'https://qa1-ngahservices.ngic.com/EnrollmentApi/api/ApplicationBundle'
     this.authToken =
       process.env.ALLSTATE_AUTH_TOKEN || 'VGVzdFVzZXI6VGVzdDEyMzQ='
-    this.agentId = process.env.ALLSTATE_AGENT_ID || '159208'
+    // Eliminado this.agentId para forzar paso explícito
   }
 
   /**
@@ -76,6 +75,7 @@ export class ApplicationBundleAPI {
     selectedPlans: any[],
     state: string,
     effectiveDate: string,
+    agentId: string, // Nuevo parámetro
     dateOfBirth?: string,
     isSmoker?: boolean,
     hasHealthConditions?: boolean,
@@ -188,13 +188,17 @@ export class ApplicationBundleAPI {
         uniquePlanKeys.length !== planKeys.length,
     })
 
+    if (!agentId) {
+        throw new Error("Allstate Agent ID is required for ApplicationBundle.");
+    }
+
     const requestData = {
       state,
       planIds: uniquePlanIds,
       planKeys: uniquePlanKeys,
       effectiveDate,
       dateOfBirth,
-      agentNumber: this.agentId,
+      agentNumber: agentId,
       isEFulfillment: true,
       isFulfillment: true,
       paymentFrequency: 'Monthly',
@@ -221,6 +225,7 @@ export class ApplicationBundleAPI {
       memberCount,
       rateTier,
       medSuppEnrollmentType,
+      agentNumber: agentId
     })
 
     return requestData
@@ -337,6 +342,7 @@ export class ApplicationBundleAPI {
     selectedPlans: any[],
     state: string,
     effectiveDate: string,
+    agentId: string, // Nuevo parámetro obligatorio
     dateOfBirth?: string,
     isSmoker?: boolean,
     hasHealthConditions?: boolean,
@@ -347,10 +353,15 @@ export class ApplicationBundleAPI {
     hasMedicare?: boolean
   ): Promise<ApplicationBundleResponse> {
     try {
+      if (!agentId) {
+         throw new Error("Allstate Agent ID must be provided to getApplicationBundle.");
+      }
+
       const requestData = this.mapQuotingDataToApplicationBundle(
         selectedPlans,
         state,
         effectiveDate,
+        agentId,
         dateOfBirth,
         isSmoker,
         hasHealthConditions,
@@ -365,7 +376,7 @@ export class ApplicationBundleAPI {
         url: this.baseURL,
         requestData,
         authToken: this.authToken ? 'Present' : 'Missing',
-        agentId: this.agentId,
+        agentId: agentId,
       })
 
       console.log('ApplicationBundle Request Details:', {
@@ -373,6 +384,7 @@ export class ApplicationBundleAPI {
         state,
         effectiveDate,
         dateOfBirth,
+        agentId,
         mappedRequest: requestData,
       })
 

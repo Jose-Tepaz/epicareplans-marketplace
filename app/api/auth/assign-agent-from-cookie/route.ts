@@ -27,13 +27,6 @@ export async function POST(request: NextRequest) {
     const cookieStore = await cookies()
     const agentReferralCode = cookieStore.get('agent_referral_code')?.value
     
-    if (!agentReferralCode) {
-      return NextResponse.json(
-        { success: false, message: 'No hay código de agente en la cookie' },
-        { status: 200 } // No es un error, simplemente no hay código
-      )
-    }
-    
     // Verificar que el usuario es un cliente
     const { data: userData, error: userError } = await supabase
       .from('users')
@@ -51,36 +44,50 @@ export async function POST(request: NextRequest) {
     
     if (userData.role !== 'client') {
       // Si no es cliente, limpiar la cookie y retornar
-      cookieStore.delete('agent_referral_code')
+      if (agentReferralCode) cookieStore.delete('agent_referral_code')
       return NextResponse.json(
         { success: false, message: 'Usuario no es cliente' },
         { status: 200 }
       )
     }
-    
-    // Llamar a la función RPC para agregar el agente
-    const { data: result, error: rpcError } = await supabase
-      .rpc('add_agent_to_existing_client', {
-        client_user_id: user.id,
-        agent_referral_code: agentReferralCode
-      })
-    
-    if (rpcError) {
-      console.error('❌ Error en RPC add_agent_to_existing_client:', rpcError)
-      return NextResponse.json(
-        { error: 'Error asignando agente', details: rpcError.message },
-        { status: 500 }
-      )
+
+    let result;
+
+    if (agentReferralCode) {
+        // CASO 1: Hay cookie de referido -> Asignar ese agente (Secondary Existing Logic)
+        console.log('🔗 Cookie detectada, asignando agente de referido a cliente existente...')
+        
+        const { data: rpcResult, error: rpcError } = await supabase
+          .rpc('add_agent_to_existing_client', {
+            client_user_id: user.id,
+            agent_referral_code: agentReferralCode
+          })
+        
+        if (rpcError) {
+            console.error('❌ Error en RPC add_agent_to_existing_client:', rpcError)
+            return NextResponse.json({ error: rpcError.message }, { status: 500 })
+        }
+        result = rpcResult
+
+    } else {
+        // CASO 2: NO hay cookie -> Asignar Default Agent como Secundario (New Logic)
+        console.log('🌍 Tráfico directo detectado (sin cookie), asignando Default Agent como secundario...')
+        
+        const { data: rpcResult, error: rpcError } = await supabase
+          .rpc('assign_default_agent_as_secondary', {
+            client_user_id: user.id
+          })
+        
+        if (rpcError) {
+            console.error('❌ Error en RPC assign_default_agent_as_secondary:', rpcError)
+            return NextResponse.json({ error: rpcError.message }, { status: 500 })
+        }
+        result = rpcResult
     }
     
-    // Si la operación fue exitosa, no limpiar la cookie para que persista para el enrollment
+    // Logging final
     if (result && result.success) {
-      // cookieStore.delete('agent_referral_code') // COMENTADO: Mantener cookie para enrollment
-      console.log('✅ Agente asignado a cliente existente:', {
-        client_id: user.id,
-        agent_profile_id: result.agent_profile_id,
-        already_exists: result.already_exists
-      })
+      console.log('✅ Asignación exitosa:', result)
     }
     
     return NextResponse.json(result || { success: false })

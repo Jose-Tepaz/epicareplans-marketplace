@@ -45,6 +45,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // --- SECURE AGENT ID RESOLUTION ---
+    // Sobrescribir cualquier agentId que venga del cliente con el valor validado en servidor
+    const { resolveAllstateAgentId } = await import('@/lib/helpers/allstate-agent-resolution');
+    const secureAgentId = await resolveAllstateAgentId();
+
+    if (!secureAgentId) {
+      console.error('❌ Failed to resolve Allstate Agent ID (Rate/Cart)');
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Agent ID Resolution Failed',
+          message: 'Could not determine a valid Allstate Agent ID from database.'
+        },
+        { status: 400 }
+      );
+    }
+    
+    console.log(`🔒 Overwriting request agentId (${body.agentId}) with secure ID: ${secureAgentId}`);
+    body.agentId = secureAgentId;
+    // -----------------------------------
+
     // Llamar a la API de Allstate
     // Usar QA environment si no hay token de producción
     const allstateUrl = process.env.ALLSTATE_API_URL_RATE_CART || 

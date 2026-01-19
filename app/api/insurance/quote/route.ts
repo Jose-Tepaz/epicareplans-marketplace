@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createClient } from '@/lib/supabase/server';
 import { allstate, manhattanLife } from '@/lib/api/carriers';
 import { InsuranceFormData } from '@/lib/types/insurance';
 
@@ -12,75 +10,17 @@ export async function POST(request: NextRequest) {
     console.log('📝 Form data received:', formData);
 
     // --- Lógica de Selección de Agente ---
-    const supabase = await createClient();
-    const cookieStore = await cookies();
-    const agentReferralCode = cookieStore.get('agent_referral_code')?.value;
-    
-    let agentProfileId: string | null = null;
+    console.log('🔄 Resolving Allstate Agent ID (Quote)...');
+    const { resolveAllstateAgentId } = await import('@/lib/helpers/allstate-agent-resolution');
+    const allstateAgentCode = await resolveAllstateAgentId();
 
-    // 1. Determinar agent_profile_id
-    if (agentReferralCode) {
-      console.log('🍪 Cookie de agente detectada:', agentReferralCode);
-      const { data: verifyResult, error: verifyError } = await supabase.rpc('verify_agent_code', {
-        link_code: agentReferralCode
-      });
-
-      if (!verifyError && Array.isArray(verifyResult) && verifyResult.length > 0 && verifyResult[0].is_valid) {
-        agentProfileId = verifyResult[0].agent_id;
-        console.log('✅ Agente validado desde cookie:', agentProfileId);
-      } else {
-        console.warn('⚠️ Agente inválido o error en verificación:', verifyError || 'No encontrado');
-      }
-    }
-
-    // Si no tenemos agente por cookie (o falló), buscar default
-    if (!agentProfileId) {
-      if (agentReferralCode) {
-         console.warn('⚠️ Se intentó usar referral, pero falló la validación. CAYENDO A DEFAULT.');
-      }
-      console.log('🔍 Buscando agente por defecto...');
-      const { data: defaultAgentResult, error: defaultError } = await supabase.rpc('get_default_agent');
-      
-      if (!defaultError && Array.isArray(defaultAgentResult) && defaultAgentResult.length > 0) {
-        agentProfileId = defaultAgentResult[0].agent_id;
-        console.log('✅ Agente por defecto encontrado:', agentProfileId);
-      } else {
-        console.error('❌ Error buscando agente por defecto:', defaultError);
-      }
+    if (allstateAgentCode) {
+        console.log('✅ Quote Route: Agent ID resolved successfully:', allstateAgentCode);
     } else {
-        console.log('ℹ️ Usando agente obtenido previamente (Referral validado). NO se busca default.');
-    }
-
-    let allstateAgentCode: string | undefined;
-
-    // 2. Si tenemos agent_profile_id, buscar su código específico para Allstate
-    if (agentProfileId) {
-      // Buscar ID de compañía Allstate
-      const { data: allstateCompany } = await supabase
-        .from('insurance_companies')
-        .select('id')
-        .ilike('slug', 'allstate')
-        .single();
-      
-      if (allstateCompany) {
-        // Buscar agent_code en agents_with_companies
-        console.log(`🔎 Consultando agents_with_companies para Agent Profile: ${agentProfileId}, Company ID: ${allstateCompany.id}`);
-        const { data: agentCompanyData, error: agentCompanyError } = await supabase
-          .from('agents_with_companies')
-          .select('agent_code')
-          .eq('agent_profile_id', agentProfileId)
-          .eq('company_id', allstateCompany.id)
-          .single();
-          
-        if (agentCompanyData && agentCompanyData.agent_code) {
-          allstateAgentCode = agentCompanyData.agent_code;
-          console.log('🎯 Código de Agente Allstate encontrado:', allstateAgentCode);
-        } else {
-          console.warn('⚠️ No se encontró registro en agents_with_companies para este agente y Allstate:', agentCompanyError);
-        }
-      } else {
-        console.error('❌ No se encontró la compañía Allstate en la BD');
-      }
+        console.warn('⚠️ Quote Route: Could not resolve Agent ID from DB (referral or default).');
+        // No retornamos error aquí todavía, dejamos que el cliente API lance el error o maneje undefined
+        // pero idealmente deberíamos fallar rápido si es crítico.
+        // La implementación anterior intentaba seguir adelante y el cliente API lanzaba error.
     }
 
     // Llamar a ambos carriers en paralelo
