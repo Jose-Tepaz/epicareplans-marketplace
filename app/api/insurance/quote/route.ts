@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { allstate, manhattanLife } from '@/lib/api/carriers';
+import { allstate, manhattanLife, tripleS } from '@/lib/api/carriers';
 import { InsuranceFormData } from '@/lib/types/insurance';
 
 export async function POST(request: NextRequest) {
@@ -23,12 +23,13 @@ export async function POST(request: NextRequest) {
         // La implementación anterior intentaba seguir adelante y el cliente API lanzaba error.
     }
 
-    // Llamar a ambos carriers en paralelo
+    // Llamar a todos los carriers en paralelo
     console.log(`🚀 Iniciando cotización con Allstate Agent Code: "${allstateAgentCode}" (undefined = fallo)`);
 
-    const [allstateResult, manhattanLifeResult] = await Promise.allSettled([
+    const [allstateResult, manhattanLifeResult, tripleSResult] = await Promise.allSettled([
       allstate.allstateAPI.getInsuranceQuotes(formData, allstateAgentCode), // Usar el código dinámico
-      manhattanLife.manhattanLifeAPI.getInsuranceQuotes(formData)
+      manhattanLife.manhattanLifeAPI.getInsuranceQuotes(formData),
+      tripleS.tripleSAPI.getInsuranceQuotes(formData, formData.tripleSFaceAmount || 10000) // Triple S con face amount
     ]);
 
     const allstatePlans = allstateResult.status === 'fulfilled' ? allstateResult.value : [];
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
       manhattanLifeResult.status === 'fulfilled'
         ? manhattanLifeResult.value.agentProducts.map(product => product.productName).filter(Boolean)
         : [];
+    const tripleSPlans = tripleSResult.status === 'fulfilled' ? tripleSResult.value : [];
 
     // Log errors if any
     if (allstateResult.status === 'rejected') {
@@ -45,10 +47,13 @@ export async function POST(request: NextRequest) {
     if (manhattanLifeResult.status === 'rejected') {
       console.error('❌ Manhattan Life error:', manhattanLifeResult.reason);
     }
+    if (tripleSResult.status === 'rejected') {
+      console.error('❌ Triple S error:', tripleSResult.reason);
+    }
 
-    const allPlans = [...allstatePlans, ...manhattanLifePlans];
+    const allPlans = [...allstatePlans, ...manhattanLifePlans, ...tripleSPlans];
 
-    console.log(`✅ Total plans: ${allPlans.length} (Allstate: ${allstatePlans.length}, Manhattan Life: ${manhattanLifePlans.length})`);
+    console.log(`✅ Total plans: ${allPlans.length} (Allstate: ${allstatePlans.length}, Manhattan Life: ${manhattanLifePlans.length}, Triple S: ${tripleSPlans.length})`);
 
     // Return the plans with carrier-specific metadata
     return NextResponse.json({
@@ -66,6 +71,11 @@ export async function POST(request: NextRequest) {
           count: manhattanLifePlans.length,
           error: manhattanLifeResult.status === 'rejected' ? manhattanLifeResult.reason.message : null,
           products: manhattanLifeAgentProducts
+        },
+        tripleS: {
+          success: tripleSResult.status === 'fulfilled',
+          count: tripleSPlans.length,
+          error: tripleSResult.status === 'rejected' ? tripleSResult.reason.message : null
         }
       }
     });

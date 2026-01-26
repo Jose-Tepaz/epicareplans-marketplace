@@ -8,11 +8,14 @@ export function splitPlansByCompany(plans: any[]): EnrollmentByCompany[] {
   const byCompany = new Map<string, EnrollmentByCompany>()
   
   plans.forEach(plan => {
-    const companyId = plan.company_id || 'allstate'
-    const companySlug = plan.company_slug || 'allstate'
+    // Priorizar carrierSlug sobre company_slug y company_id
+    // Esto asegura que Triple S se agrupe correctamente con 'triple-s'
+    const companySlug = plan.carrierSlug || plan.company_slug || 'allstate'
+    const companyId = plan.company_id || companySlug
     
-    if (!byCompany.has(companyId)) {
-      byCompany.set(companyId, {
+    // Usar companySlug como key para agrupar
+    if (!byCompany.has(companySlug)) {
+      byCompany.set(companySlug, {
         company_id: companyId,
         company_slug: companySlug,
         plans: [],
@@ -20,7 +23,7 @@ export function splitPlansByCompany(plans: any[]): EnrollmentByCompany[] {
       })
     }
     
-    const entry = byCompany.get(companyId)!
+    const entry = byCompany.get(companySlug)!
     entry.plans.push(plan)
     entry.amount += plan.price || 0
   })
@@ -125,7 +128,7 @@ export function getMultiCarrierMessage(results: MultiCarrierResult[]) {
  */
 export function filterPlansByCompany(plans: any[], companySlug: string) {
   return plans.filter(plan => 
-    (plan.company_slug || 'allstate') === companySlug
+    (plan.carrierSlug || plan.company_slug || 'allstate') === companySlug
   )
 }
 
@@ -135,7 +138,7 @@ export function filterPlansByCompany(plans: any[], companySlug: string) {
  */
 export function calculateTotalByCompany(plans: any[], companySlug: string): number {
   return plans
-    .filter(plan => (plan.company_slug || 'allstate') === companySlug)
+    .filter(plan => (plan.carrierSlug || plan.company_slug || 'allstate') === companySlug)
     .reduce((total, plan) => total + (plan.price || 0), 0)
 }
 
@@ -152,6 +155,6 @@ export function isMultiCarrierEnrollment(plans: any[]): boolean {
  * Obtener lista de aseguradoras en el enrollment
  */
 export function getCompaniesInEnrollment(plans: any[]): string[] {
-  const companies = new Set(plans.map(plan => plan.company_slug || 'allstate'))
+  const companies = new Set(plans.map(plan => plan.carrierSlug || plan.company_slug || 'allstate'))
   return Array.from(companies)
 }

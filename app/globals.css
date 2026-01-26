@@ -14,6 +14,8 @@
   --primary-foreground: #ffffff;
   --secondary: #b8e5f5;
   --secondary-foreground: #1f2937;
+  --tertiary: #F9F9F9;
+  --tertiary-foreground: #1f2937;
   --muted: #fee2e2;
   --muted-foreground: #6b7280;
   --accent: #ffab66;
@@ -135,7 +137,7 @@
 
 
 .input-epicare{
-  @apply bg-white text-foreground border-0 rounded-full px-6 py-6 text-lg mb-8 placeholder:text-gray-400;
+  @apply bg-white text-foreground border-1 border-gray-200 rounded-full px-6 py-6 text-lg mb-8 placeholder:text-gray-400;
  }
 
  .btn-cyan {
@@ -163,10 +165,23 @@
  @apply cursor-pointer rounded-full bg-transparent text-white border-2 border-white transition-all duration-300 hover:bg-white hover:text-primary text-lg px-8 py-6  font-semibold disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
+.container-large{
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+ 
+  
+}
+
+.padding-global{
+  width: 100%;
+  padding: 0px 32px;
+}
+
 .input-epicare {
   background: transparent;
-  color: var(--color-primary-foreground) !important;
-  border: 1px solid white !important;
+  color: #A0A09C !important;
+  border: 1px solid #A0A09C !important;
   border-radius: 10px !important;
   padding: 10px 20px !important;
   font-size: 16px !important;

@@ -45,6 +45,11 @@ export default function InsuranceOptionsPage() {
   const [selectedPlanType, setSelectedPlanType] = useState<string>("all");
   const [selectedProductType, setSelectedProductType] = useState<string>("all");
   const [selectedCarrier, setSelectedCarrier] = useState<string>("all");
+  const [selectedInsuranceType, setSelectedInsuranceType] = useState<string>("all"); // NUEVO: Vida, Salud, Retiro
+  const [selectedSeries, setSelectedSeries] = useState<string>("all"); // NUEVO: Series de Triple S
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]); // NUEVO: Rango de precio
+  const [tripleSFaceAmount, setTripleSFaceAmount] = useState<number>(10000); // NUEVO: Face Amount para Triple S
+  const [shouldRefetchTripleS, setShouldRefetchTripleS] = useState<boolean>(false); // NUEVO: Trigger para re-fetch
   const [manhattanLifeAgentProducts, setManhattanLifeAgentProducts] = useState<
     string[]
   >([]);
@@ -342,6 +347,12 @@ export default function InsuranceOptionsPage() {
     if (user && !isFamilyInitialized) return;
 
     const shouldAttemptAutoFetch = () => {
+      // Permitir refetch si shouldRefetchTripleS está activo
+      if (shouldRefetchTripleS) {
+        console.log("✅ [AUTO-FETCH] Allowing refetch for Triple S Face Amount change");
+        return true;
+      }
+      
       // Avoid parallel fetches
       if (isFetchingPlans) return false;
       // Require either: user with no missing fields, or stored form data for guests
@@ -413,6 +424,9 @@ export default function InsuranceOptionsPage() {
         return;
       }
 
+      // Agregar tripleSFaceAmount al payload
+      payload.tripleSFaceAmount = tripleSFaceAmount;
+
       const payloadKey = JSON.stringify({
         zipCode: payload.zipCode,
         dateOfBirth: payload.dateOfBirth,
@@ -420,11 +434,13 @@ export default function InsuranceOptionsPage() {
         smokes: payload.smokes,
         coverageStartDate: payload.coverageStartDate,
         paymentFrequency: payload.paymentFrequency,
-        dependents: payload.dependents?.map((d: any) => d.id).sort()
+        dependents: payload.dependents?.map((d: any) => d.id).sort(),
+        tripleSFaceAmount: tripleSFaceAmount // Incluir en cache key
       });
 
       // 1. Check in-memory ref (avoid loop in same session)
-      if (lastAutoFetchPayloadRef.current === payloadKey) {
+      // SKIP cache check si shouldRefetchTripleS está activo
+      if (!shouldRefetchTripleS && lastAutoFetchPayloadRef.current === payloadKey) {
         console.log("⏭️  [AUTO-FETCH] Skipping - already fetched this payload");
         setHasAttemptedAutoFetch(true);
         setLoading(false);
@@ -432,7 +448,8 @@ export default function InsuranceOptionsPage() {
       }
 
       // 2. Check session storage cache (avoid re-fetch on navigation back)
-      if (insurancePlans.length > 0) {
+      // SKIP cache check si shouldRefetchTripleS está activo
+      if (!shouldRefetchTripleS && insurancePlans.length > 0) {
          const storedPayloadKey = sessionStorage.getItem("lastFetchPayloadKey");
          if (storedPayloadKey === payloadKey) {
            console.log("⏭️  [AUTO-FETCH] Skipping - cached payload matches");
@@ -442,6 +459,12 @@ export default function InsuranceOptionsPage() {
            setLoading(false);
            return;
          }
+      }
+      
+      // Reset refetch flag después de usarlo
+      if (shouldRefetchTripleS) {
+        console.log("🔄 [AUTO-FETCH] Force refetch due to Triple S Face Amount change");
+        setShouldRefetchTripleS(false);
       }
 
       // Only set loading state if we are ACTUALLY going to fetch
@@ -468,6 +491,18 @@ export default function InsuranceOptionsPage() {
         
         if (plans.length > 0) {
           const normalizedPlans = plans.map(normalizeInsurancePlan);
+          
+          // Log Triple S plans para verificar actualización
+          const tripleSPlans = normalizedPlans.filter(p => p.carrierSlug === 'triple-s');
+          if (tripleSPlans.length > 0) {
+            console.log(`✅ [TRIPLE-S] Updated ${tripleSPlans.length} plans with Face Amount: $${tripleSFaceAmount.toLocaleString()}`);
+            console.log('📊 [TRIPLE-S] Sample plan:', {
+              name: tripleSPlans[0].name,
+              price: tripleSPlans[0].price,
+              faceAmount: tripleSPlans[0].metadata?.faceAmount
+            });
+          }
+          
           setInsurancePlans(normalizedPlans);
           setCurrentPage(1);
 
@@ -517,7 +552,8 @@ export default function InsuranceOptionsPage() {
     isClient,
     insurancePlans.length,
     isFamilyInitialized,
-    familyMembers
+    familyMembers,
+    shouldRefetchTripleS // Re-fetch cuando se active el trigger
   ]);
 
   // Function to update plans with new form data
@@ -750,6 +786,27 @@ export default function InsuranceOptionsPage() {
         return carrierSlug === selectedCarrier;
       });
     }
+
+    // NUEVO: Filter by Insurance Type (Vida, Salud, Retiro)
+    if (selectedInsuranceType !== "all") {
+      filtered = filtered.filter((plan) => {
+        const insuranceType = (plan.metadata as any)?.insuranceType;
+        return insuranceType === selectedInsuranceType;
+      });
+    }
+
+    // NUEVO: Filter by Triple S Series
+    if (selectedSeries !== "all") {
+      filtered = filtered.filter((plan) => {
+        const seriesCategory = (plan.metadata as any)?.seriesCategory;
+        return seriesCategory === selectedSeries;
+      });
+    }
+
+    // NUEVO: Filter by Price Range
+    filtered = filtered.filter((plan) => {
+      return plan.price >= priceRange[0] && plan.price <= priceRange[1];
+    });
 
     // Filter by plan type
     if (selectedPlanType !== "all") {
@@ -1073,10 +1130,23 @@ export default function InsuranceOptionsPage() {
               selectedProductType={selectedProductType}
               sortBy={sortBy}
               selectedCarrier={selectedCarrier}
+              selectedInsuranceType={selectedInsuranceType}
+              selectedSeries={selectedSeries}
+              priceRange={priceRange}
+              tripleSFaceAmount={tripleSFaceAmount}
+              isFetchingPlans={isFetchingPlans}
               onPlanTypeChange={setSelectedPlanType}
               onProductTypeChange={setSelectedProductType}
               onSortChange={setSortBy}
               onCarrierChange={setSelectedCarrier}
+              onInsuranceTypeChange={setSelectedInsuranceType}
+              onSeriesChange={setSelectedSeries}
+              onPriceRangeChange={setPriceRange}
+              onTripleSFaceAmountChange={(value) => {
+                console.log(`💰 [FACE-AMOUNT] Changed to: $${value.toLocaleString()}`);
+                setTripleSFaceAmount(value);
+                setShouldRefetchTripleS(true); // Activar trigger de re-fetch
+              }}
               plans={insurancePlans}
               dynamicPlanTypes={manhattanLifeAgentProducts}
             />

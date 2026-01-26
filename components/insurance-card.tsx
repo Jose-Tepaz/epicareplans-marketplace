@@ -127,8 +127,26 @@ export function InsuranceCard({ plan }: InsuranceCardProps) {
   // Verificar si el plan está en comparación
   const inComparison = isInComparison(plan.id)
 
+  // Detectar si es plan de Triple S
+  const isTripleSPlan = plan.carrierSlug === 'triple-s'
+
   // Manejar la selección del plan
   const handleSelectPlan = async () => {
+    // Validación especial para planes de Triple S
+    if (isTripleSPlan) {
+      const canCreate = (plan.metadata as any)?.canCreateApplication
+      if (!canCreate) {
+        toast.error('Plan no disponible', {
+          description: 'Este plan no puede ser agregado al carrito en este momento.'
+        })
+        return
+      }
+
+      // Agregar plan directamente (face amount ya está en el plan desde el quote)
+      addItem(plan)
+      return
+    }
+
     // Filtrar family members que están incluidos en el quote
     const activeFamilyMembers = familyMembers.filter(m => m.included_in_quote !== false)
 

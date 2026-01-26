@@ -1,10 +1,12 @@
 // Exportar carriers originales para quotes (desde sus index.ts)
 export * as allstate from './allstate'
 export * as manhattanLife from './manhattan-life'
+export * as tripleS from './triple-s'
 
 // Enrollment functions
 import { submitAllstateEnrollment } from './allstate/enrollment'
 import { submitManhattanEnrollment } from './manhattan-life/enrollment'
+import { submitTripleSEnrollment } from './triple-s/enrollment'
 import type { EnrollmentRequest } from '@/lib/types/enrollment'
 
 export const enrollmentCarriers = {
@@ -14,10 +16,9 @@ export const enrollmentCarriers = {
   'manhattan-life': {
     submitEnrollment: submitManhattanEnrollment,
   },
-  // Futuro:
-  // 'triple-s': {
-  //   submitEnrollment: submitTripleSEnrollment,
-  // },
+  'triple-s': {
+    submitEnrollment: submitTripleSEnrollment,
+  },
 }
 
 export async function submitEnrollmentToCarrier(

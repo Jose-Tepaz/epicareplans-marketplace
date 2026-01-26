@@ -11,15 +11,27 @@
  */
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
+import { Loader2 } from "lucide-react"
+
 interface InsuranceFiltersSidebarProps {
   selectedPlanType: string
   selectedProductType: string
   sortBy: string
   selectedCarrier: string
+  selectedInsuranceType?: string
+  selectedSeries?: string
+  priceRange?: [number, number]
+  tripleSFaceAmount?: number
+  isFetchingPlans?: boolean
   onPlanTypeChange: (value: string) => void
   onProductTypeChange: (value: string) => void
   onSortChange: (value: string) => void
   onCarrierChange: (value: string) => void
+  onInsuranceTypeChange?: (value: string) => void
+  onSeriesChange?: (value: string) => void
+  onPriceRangeChange?: (value: [number, number]) => void
+  onTripleSFaceAmountChange?: (value: number) => void
   plans?: any[]
   dynamicPlanTypes?: string[]
 }
@@ -29,10 +41,19 @@ export function InsuranceFiltersSidebar({
   selectedProductType,
   sortBy,
   selectedCarrier,
+  selectedInsuranceType = "all",
+  selectedSeries = "all",
+  priceRange = [0, 1000],
+  tripleSFaceAmount = 10000,
+  isFetchingPlans = false,
   onPlanTypeChange,
   onProductTypeChange,
   onSortChange,
   onCarrierChange,
+  onInsuranceTypeChange,
+  onSeriesChange,
+  onPriceRangeChange,
+  onTripleSFaceAmountChange,
   plans = [],
   dynamicPlanTypes = []
 }: InsuranceFiltersSidebarProps) {
@@ -66,6 +87,24 @@ export function InsuranceFiltersSidebar({
         .map(name => name.trim())
     )
   )
+
+  // Extraer series disponibles de Triple S
+  const availableSeries = Array.from(
+    new Set(
+      plans
+        .filter(plan => plan.carrierSlug === 'triple-s')
+        .map(plan => (plan.metadata as any)?.seriesCategory)
+        .filter(Boolean)
+    )
+  )
+
+  // Verificar si hay planes de Triple S
+  const hasTripleSPlans = plans.some(plan => plan.carrierSlug === 'triple-s')
+
+  // Calcular rango de precios dinámico
+  const prices = plans.map(p => p.price).filter(p => p > 0)
+  const minPrice = prices.length > 0 ? Math.floor(Math.min(...prices)) : 0
+  const maxPrice = prices.length > 0 ? Math.ceil(Math.max(...prices)) : 1000
 
   return (
     <aside className="lg:w-64 flex-shrink-0">
@@ -125,6 +164,112 @@ export function InsuranceFiltersSidebar({
             </SelectContent>
           </Select>
         </div>
+
+        {/* NUEVO: Insurance Type Filter (Vida, Salud, Retiro) */}
+        {onInsuranceTypeChange && (
+          <div>
+            <label className="text-sm font-semibold text-gray-900 mb-2 block">
+              Tipo de Seguro
+            </label>
+            <Select value={selectedInsuranceType} onValueChange={onInsuranceTypeChange}>
+              <SelectTrigger className="w-full rounded-full border-2 border-gray-300 h-12">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los Tipos</SelectItem>
+                <SelectItem value="Vida">Vida</SelectItem>
+                <SelectItem value="Salud">Salud</SelectItem>
+                <SelectItem value="Retiro">Retiro</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* NUEVO: Triple S Face Amount Filter */}
+        {onTripleSFaceAmountChange && hasTripleSPlans && (
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 relative">
+            <label className="text-sm font-semibold text-gray-900 mb-2 block">
+              💰 Monto de Cobertura Triple S
+            </label>
+            <div className="px-2">
+              <Slider
+                min={10000}
+                max={100000}
+                step={10000}
+                value={[tripleSFaceAmount]}
+                onValueChange={([value]) => onTripleSFaceAmountChange(value)}
+                className="mb-3"
+                disabled={isFetchingPlans}
+              />
+              <div className="text-center">
+                <span className="text-lg font-bold text-blue-700 flex items-center justify-center gap-2">
+                  ${tripleSFaceAmount.toLocaleString()}
+                  {isFetchingPlans && (
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-600 mt-1">
+                <span>$10k</span>
+                <span>$100k</span>
+              </div>
+              {isFetchingPlans ? (
+                <p className="text-xs text-blue-700 mt-2 font-semibold animate-pulse">
+                  🔄 Recotizando planes...
+                </p>
+              ) : (
+                <p className="text-xs text-gray-600 mt-2">
+                  ⚡ Los planes se recotizarán automáticamente
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* NUEVO: Triple S Series Filter */}
+        {onSeriesChange && availableSeries.length > 0 && (
+          <div>
+            <label className="text-sm font-semibold text-gray-900 mb-2 block">
+              Serie Triple S
+            </label>
+            <Select value={selectedSeries} onValueChange={onSeriesChange}>
+              <SelectTrigger className="w-full rounded-full border-2 border-gray-300 h-12">
+                <SelectValue placeholder="Todas las Series" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las Series</SelectItem>
+                {availableSeries.map(series => (
+                  <SelectItem key={series} value={series}>
+                    {series}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* NUEVO: Price Range Filter */}
+        {onPriceRangeChange && (
+          <div>
+            <label className="text-sm font-semibold text-gray-900 mb-2 block">
+              Rango de Precio
+            </label>
+            <div className="px-2">
+              <Slider
+                min={minPrice}
+                max={maxPrice}
+                step={10}
+                value={priceRange}
+                onValueChange={(value) => onPriceRangeChange(value as [number, number])}
+                className="mb-3"
+              />
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>${priceRange[0]}</span>
+                <span>${priceRange[1]}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Sort Filter */}
         <div>

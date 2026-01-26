@@ -23,6 +23,7 @@ export interface InsuranceFormData {
   lastTobaccoUse?: string;
   coverageStartDate: string;
   paymentFrequency: "monthly" | "quarterly" | "semi-annually" | "annually";
+  tripleSFaceAmount?: number; // Monto de cobertura para Triple S ($10k - $100k)
 }
 
 // Mapped insurance plan for our UI
